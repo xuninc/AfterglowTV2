@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard } from 'lucide-react';
 import { Focusable } from '../common/Focusable';
 import { useStore } from '../../store/useStore';
 import axios from 'axios';
@@ -21,6 +21,13 @@ export const SettingsPanel: React.FC = () => {
   const setMarqueeEnabled = useStore(state => state.setMarqueeEnabled);
   const setBackgroundEnrichmentEnabled = useStore(state => state.setBackgroundEnrichmentEnabled);
 
+  // Premium / Trial hooks
+  const isPremium = useStore(state => state.isPremium);
+  const trialStartDate = useStore(state => state.trialStartDate);
+  const buyPremium = useStore(state => state.buyPremium);
+  const resetTrial = useStore(state => state.resetTrial);
+  const setTrialStartDate = useStore(state => state.setTrialStartDate);
+
   // Quick state to add a simple M3U link in Settings
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
@@ -29,6 +36,13 @@ export const SettingsPanel: React.FC = () => {
   // Counting total EPG caches
   const totalEpgCount = Object.keys(epgData).length;
   const currentPlaylist = playlists.find(p => p.id === currentPlaylistId);
+
+  // Compute trial status
+  const start = new Date(trialStartDate);
+  const now = new Date();
+  const diffTime = Math.max(0, now.getTime() - start.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const daysRemaining = Math.max(0, 15 - diffDays);
 
   // EPG configuration manager state
   const [customEpgUrl, setCustomEpgUrl] = useState(currentPlaylist?.epgUrl || '');
@@ -335,6 +349,112 @@ export const SettingsPanel: React.FC = () => {
                 )}
               </Focusable>
             </div>
+          </div>
+        </div>
+
+        {/* License & Subscription Controls */}
+        <div className="bg-afterglow-card border border-white/5 rounded-2xl p-6 flex flex-col gap-5">
+          <div className="flex items-start gap-4">
+            <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-lg shrink-0">
+              <CreditCard className="w-6 h-6" />
+            </div>
+            <div className="flex-grow text-left">
+              <h4 className="text-sm font-display font-bold text-white tracking-widest uppercase">LICENSE & SUBSCRIPTION MANAGEMENT</h4>
+              <p className="text-xs text-white/40 mt-1">Configure and inspect your Afterglow license activation, trial periods, and billing statuses.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-1 border-t border-white/5 pt-5 text-left">
+            
+            {/* Status Information Column */}
+            <div className="space-y-3">
+              <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest block">LICENSING NODE STATUS</span>
+              
+              {isPremium ? (
+                <div className="space-y-2.5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded text-emerald-400 font-mono text-[9px] font-bold tracking-wider uppercase">
+                    <Sparkles className="w-3.5 h-3.5 fill-current animate-pulse" /> PREMIUM LIFETIME UNLOCKED
+                  </div>
+                  <div className="p-3 bg-black/30 rounded-xl space-y-1.5 border border-white/5 font-mono text-[10px]">
+                    <div className="flex justify-between">
+                      <span className="text-white/30 uppercase">LICENSE ID:</span>
+                      <span className="text-emerald-400 font-bold truncate max-w-[200px]">GLOW-PREM-LIFETIME</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-white/30 uppercase">VALIDITY:</span>
+                      <span className="text-white/70">PERMANENT UNLIMITED</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-white/30 uppercase">FEATURES:</span>
+                      <span className="text-indigo-300">DVR, ENRICHMENT, SYNC PRO</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-afterglow-primary/10 border border-afterglow-primary/20 rounded text-afterglow-primary font-mono text-[9px] font-bold tracking-wider uppercase">
+                    <Clock className="w-3.5 h-3.5" /> FREE SYSTEM TRIAL RUNNING
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between font-mono text-[9px] text-white/40">
+                      <span>TRIAL TIMELINE</span>
+                      <span className="text-white/80 font-bold">{daysRemaining} / 15 DAYS REMAINING</span>
+                    </div>
+                    <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                      <div 
+                        className="h-full afterglow-gradient rounded-full transition-all duration-500" 
+                        style={{ width: `${(daysRemaining / 15) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Focusable 
+                      id="btn-settings-premium"
+                      className="flex-grow font-mono text-[10px] font-bold tracking-wider uppercase bg-afterglow-gradient text-white py-2 px-4 rounded-lg text-center cursor-pointer flex items-center justify-center gap-1.5 hover:opacity-90 transition-all shadow-glow"
+                      onEnter={buyPremium}
+                    >
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
+                      UPGRADE TO PREMIUM ($19.99)
+                    </Focusable>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sandbox Simulation Column */}
+            <div className="space-y-3 bg-indigo-950/15 border border-indigo-500/10 p-4 rounded-xl">
+              <div className="flex items-center gap-1.5 text-indigo-400">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                <span className="text-[10px] font-mono tracking-wider font-extrabold uppercase">Sandbox Evaluation Port</span>
+              </div>
+              <p className="text-[10px] text-white/40 leading-normal">
+                For smooth review/testing, bypass billing gateways and adjust dates in real-time to check locked features:
+              </p>
+              
+              <div className="space-y-2.5 pt-1.5">
+                <Focusable 
+                  id="btn-settings-reset-trial"
+                  className="w-full font-mono text-[9px] font-bold tracking-wider uppercase bg-white/5 hover:bg-white/10 text-white/70 hover:text-white py-2 px-3 border border-white/5 rounded-lg text-center cursor-pointer transition-colors block"
+                  onEnter={resetTrial}
+                >
+                  Reset Trial (Fresh start)
+                </Focusable>
+
+                <Focusable 
+                  id="btn-settings-simulate-expire"
+                  className="w-full font-mono text-[9px] font-bold tracking-wider uppercase bg-red-950/20 hover:bg-red-900/30 text-red-300 hover:text-red-200 py-2 px-3 border border-red-500/10 rounded-lg text-center cursor-pointer transition-colors block"
+                  onEnter={() => {
+                    const sixteenDaysAgo = new Date(Date.now() - 16 * 24 * 60 * 60 * 1000).toISOString();
+                    setTrialStartDate(sixteenDaysAgo);
+                  }}
+                >
+                  Simulate Expired State (Test Paywall Lock)
+                </Focusable>
+              </div>
+            </div>
+
           </div>
         </div>
 

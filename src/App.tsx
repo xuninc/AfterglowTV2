@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { LayoutGrid, Play, Settings, Tv, Disc, Menu, Layers, Rows3 } from 'lucide-react';
+import { useState } from 'react';
+import { LayoutGrid, Play, Settings, Tv, Disc, Menu, Layers, Rows3, Sparkles, Clock, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from './store/useStore';
 import { useTVNavigation } from './hooks/useTVNavigation';
@@ -15,6 +16,7 @@ import { DVRPanel } from './components/dvr/DVRPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { MediaLibrary } from './components/library/MediaLibrary';
 import { Player } from './components/video/Player';
+import { PremiumPaywall } from './components/common/PremiumPaywall';
 
 export default function App() {
   const playlists = useStore(state => state.playlists);
@@ -25,10 +27,23 @@ export default function App() {
   const setActiveView = useStore(state => state.setActiveView);
   const vodLayoutMode = useStore(state => state.vodLayoutMode);
   const setVodLayoutMode = useStore(state => state.setVodLayoutMode);
+  
+  const trialStartDate = useStore(state => state.trialStartDate);
+  const isPremium = useStore(state => state.isPremium);
+
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   useTVNavigation();
 
   const hasPlaylists = playlists.length > 0;
+
+  // Compute trial status
+  const start = new Date(trialStartDate);
+  const now = new Date();
+  const diffTime = Math.max(0, now.getTime() - start.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const daysRemaining = Math.max(0, 15 - diffDays);
+  const isTrialExpired = diffDays >= 15 && !isPremium;
 
   if (!hasPlaylists) {
     return <SetupScreen />;
@@ -146,6 +161,42 @@ export default function App() {
             {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">SETTINGS (SYNC)</span>}
           </Focusable>
         </div>
+
+        {/* Subscription Status Widget */}
+        <div className="mt-auto px-3 pt-6 border-t border-white/5">
+          {isPremium ? (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/15 rounded-xl flex items-center justify-center gap-3">
+              <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 animate-pulse" />
+              {isSidebarOpen && (
+                <div className="flex flex-col text-left">
+                  <span className="font-mono text-[9px] font-black text-emerald-400 tracking-wider">AFTERGLOW</span>
+                  <span className="font-mono text-[8px] text-white/50 tracking-wider uppercase">PREMIUM ACTIVE</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-3 bg-afterglow-primary/10 border border-afterglow-primary/15 rounded-xl flex flex-col gap-2.5">
+              <div className="flex items-center justify-center gap-3">
+                <Clock className="w-5 h-5 text-afterglow-primary shrink-0" />
+                {isSidebarOpen && (
+                  <div className="flex flex-col text-left mr-auto">
+                    <span className="font-mono text-[9px] font-black text-afterglow-primary tracking-wider uppercase">FREE TRIAL</span>
+                    <span className="font-mono text-[8px] text-white/50 tracking-wider">{daysRemaining} DAYS LEFT</span>
+                  </div>
+                )}
+              </div>
+              
+              <Focusable id="btn-sidebar-upgrade" onEnter={() => setShowUpgradeModal(true)} className="w-full">
+                <button 
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="w-full py-2 bg-afterglow-primary/20 hover:bg-afterglow-primary text-afterglow-primary hover:text-white font-mono text-[8px] font-bold tracking-widest rounded-lg transition-all border border-afterglow-primary/30 uppercase cursor-pointer"
+                >
+                  {isSidebarOpen ? 'Upgrade License' : 'UPG'}
+                </button>
+              </Focusable>
+            </div>
+          )}
+        </div>
       </motion.nav>
 
       {/* Main Content Area */}
@@ -174,6 +225,16 @@ export default function App() {
         {/* Global Mood Frame Overlay */}
         <div className="absolute inset-0 pointer-events-none z-[100] border-[16px] border-afterglow-primary/5 opacity-10 ring-inset" />
       </main>
+
+      {/* Subscription Overlay Gateways */}
+      <AnimatePresence>
+        {isTrialExpired && (
+          <PremiumPaywall daysRemaining={0} />
+        )}
+        {showUpgradeModal && (
+          <PremiumPaywall daysRemaining={daysRemaining} onClose={() => setShowUpgradeModal(false)} isOverlay={true} />
+        )}
+      </AnimatePresence>
 
     </div>
   );

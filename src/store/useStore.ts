@@ -77,6 +77,10 @@ interface AppState {
   isBackgroundEnrichmentEnabled: boolean;
   vodLayoutMode: 'grid' | 'epg' | 'shelf';
   
+  // Subscription / Trial State
+  trialStartDate: string;
+  isPremium: boolean;
+  
   // Actions
   addPlaylist: (playlist: Playlist) => void;
   removePlaylist: (id: string) => void;
@@ -104,6 +108,11 @@ interface AppState {
   setMarqueeEnabled: (val: boolean) => void;
   setBackgroundEnrichmentEnabled: (val: boolean) => void;
   setVodLayoutMode: (mode: 'grid' | 'epg' | 'shelf') => void;
+  
+  // Premium / Trial Actions
+  buyPremium: () => void;
+  resetTrial: () => void;
+  setTrialStartDate: (date: string) => void;
   
   // DVR Actions
   scheduleRecording: (job: Omit<DVRJob, 'id' | 'status'>) => void;
@@ -152,6 +161,10 @@ export const useStore = create<AppState>((set, get) => ({
   isMarqueeEnabled: loadLocalStorage<boolean>('glow_marquee_enabled', true),
   isBackgroundEnrichmentEnabled: loadLocalStorage<boolean>('glow_background_enrichment_enabled', true),
   vodLayoutMode: loadLocalStorage<'grid' | 'epg' | 'shelf'>('glow_vod_layout_mode', 'epg'),
+  
+  // Subscription / Trial State
+  trialStartDate: loadLocalStorage<string>('glow_trial_start_date', new Date().toISOString()),
+  isPremium: loadLocalStorage<boolean>('glow_is_premium', false),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -317,6 +330,23 @@ export const useStore = create<AppState>((set, get) => ({
     set({ vodLayoutMode: mode });
   },
 
+  buyPremium: () => {
+    saveLocalStorage('glow_is_premium', true);
+    set({ isPremium: true });
+  },
+
+  resetTrial: () => {
+    const freshDate = new Date().toISOString();
+    saveLocalStorage('glow_trial_start_date', freshDate);
+    saveLocalStorage('glow_is_premium', false);
+    set({ trialStartDate: freshDate, isPremium: false });
+  },
+
+  setTrialStartDate: (date) => {
+    saveLocalStorage('glow_trial_start_date', date);
+    set({ trialStartDate: date });
+  },
+
   scheduleRecording: (newItem) => set((state) => {
     const job: DVRJob = {
       ...newItem,
@@ -382,6 +412,8 @@ export const useStore = create<AppState>((set, get) => ({
     localStorage.removeItem('glow_dvr_recordings');
     localStorage.removeItem('glow_media_library');
     localStorage.removeItem('glow_monitored_folders');
+    localStorage.removeItem('glow_trial_start_date');
+    localStorage.removeItem('glow_is_premium');
     set({
       playlists: [],
       currentPlaylistId: null,
@@ -395,7 +427,9 @@ export const useStore = create<AppState>((set, get) => ({
       mediaLibrary: [],
       libraryScannerStatus: 'idle',
       libraryScannerProgress: { total: 0, processed: 0, currentItemName: '' },
-      monitoredFolders: []
+      monitoredFolders: [],
+      trialStartDate: new Date().toISOString(),
+      isPremium: false
     });
   }
 }));
