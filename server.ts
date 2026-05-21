@@ -95,6 +95,71 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Fallback M3U Parser in case standard parsers miss non-conforming lines or throw errors
+  function parseM3uFallback(m3uText: string): any {
+    const items: any[] = [];
+    const lines = m3uText.split(/\r?\n/);
+    let currentItem: any = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      if (line.toUpperCase().startsWith("#EXTINF:")) {
+        currentItem = {
+          name: "Unknown Channel",
+          tvg: { id: "", name: "", logo: "", url: "" },
+          group: { title: "General" },
+          url: ""
+        };
+
+        // Extract tvg-id
+        const tvgIdMatch = line.match(/tvg-id="([^"]*)"/i) || line.match(/tvg-id=([^,\s]+)/i);
+        if (tvgIdMatch) {
+          currentItem.tvg.id = tvgIdMatch[1];
+        }
+
+        // Extract tvg-logo
+        const logoMatch = line.match(/tvg-logo="([^"]*)"/i) || line.match(/tvg-logo=([^,\s]+)/i);
+        if (logoMatch) {
+          currentItem.tvg.logo = logoMatch[1];
+        }
+
+        // Extract group-title
+        const groupMatch = line.match(/group-title="([^"]*)"/i) || line.match(/group-title=([^,\s]+)/i);
+        if (groupMatch) {
+          currentItem.group.title = groupMatch[1];
+        }
+
+        // Extract name (last comma to end of line)
+        const commaIndex = line.lastIndexOf(",");
+        if (commaIndex !== -1) {
+          currentItem.name = line.substring(commaIndex + 1).trim();
+        }
+      } else if (line.startsWith("#")) {
+        // Skip comment lines or other unparsed tag types
+      } else if (line.startsWith("http://") || line.startsWith("https://") || line.includes("://") || line.endsWith(".m3u8") || line.endsWith(".ts")) {
+        if (currentItem) {
+          currentItem.url = line;
+          items.push(currentItem);
+          currentItem = null;
+        } else {
+          // Plain URL link directly
+          const urlParts = line.split("/");
+          const lastPart = urlParts[urlParts.length - 1] || "Channel";
+          items.push({
+            name: lastPart.replace(/\.[^/.]+$/, ""),
+            tvg: { id: "", name: "", logo: "", url: "" },
+            group: { title: "General" },
+            url: line
+          });
+        }
+      }
+    }
+
+    return { header: {}, items };
+  }
+
   // API: Fetch and Parse M3U
   app.get("/api/playlist", async (req, res) => {
     const { url } = req.query;
@@ -103,12 +168,46 @@ async function startServer() {
     }
 
     try {
-      const response = await axios.get(url, { timeout: 10000 });
-      const result = parser.parse(response.data);
+      const response = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9"
+        }
+      });
+
+      const rawData = response.data && typeof response.data === "string" ? response.data.trim() : "";
+      
+      // Perform validation checks to detect HTML landing/blocking pages returned as 200 OK
+      if (rawData.startsWith("<!DOCTYPE html") || rawData.startsWith("<html") || rawData.includes("<body") || rawData.includes("<html")) {
+        return res.status(400).json({
+          error: "Incompatible data source",
+          details: "The playlist URL returned an HTML website instead of a valid M3U playlist file. This usually occurs if the provider blocks direct program requests, if secure authorization is required, or if the credentials embedded in the URL are invalid. Double-check your setup link parameters."
+        });
+      }
+
+      let result: any = null;
+      try {
+        result = parser.parse(response.data);
+      } catch (parseErr: any) {
+        console.warn("Main IPTV M3U parser failed, fell back to manual parsing:", parseErr.message);
+      }
+
+      // If standard parser failed or found zero items, activate manual fallback parser
+      if (!result || !result.items || result.items.length === 0) {
+        console.log("No items matched using traditional M3U parser. Initiating custom line-by-line fallback parsing...");
+        result = parseM3uFallback(response.data);
+      }
+
+      console.log(`Playlist Loaded Successfully. Channels registered: ${result.items ? result.items.length : 0}`);
       res.json(result);
     } catch (error: any) {
-      console.error("Playlist fetch error:", error.message);
-      res.status(500).json({ error: "Failed to fetch playlist", details: error.message });
+      console.error("Playlist fetch failed:", error.message);
+      res.status(500).json({ 
+        error: "Failed to fetch playlist", 
+        details: error.response?.data?.details || error.message || "Request timed out. Please check that the URL is correct and active." 
+      });
     }
   });
 
@@ -120,13 +219,18 @@ async function startServer() {
     }
 
     try {
-      const response = await axios.get(url, { timeout: 15000 });
-      // EPG usually XML. Browser can parse or we can parse here.
-      // For performance, we'll send it as text and let the browser use a worker if needed.
+      const response = await axios.get(url, {
+        timeout: 20000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "application/xml,text/xml,*/*;q=0.8"
+        }
+      });
       res.set("Content-Type", "application/xml");
       res.send(response.data);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch EPG" });
+      console.error("EPG Sync Error:", error.message);
+      res.status(500).json({ error: "Failed to fetch XMLTV EPG data feed" });
     }
   });
 

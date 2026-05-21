@@ -100,9 +100,11 @@ interface AppState {
   // Theme System States
   activeThemeId: string;
   language: SupportedLanguage;
+  serverUrl: string;
   
   // Actions
   addPlaylist: (playlist: Playlist) => void;
+  setServerUrl: (url: string) => void;
   setLanguage: (lang: SupportedLanguage) => void;
   removePlaylist: (id: string) => void;
   setCurrentPlaylist: (id: string | null) => void;
@@ -180,6 +182,7 @@ export interface AfterglowBackup {
   isPremium?: boolean;
   activeThemeId?: string;
   language?: SupportedLanguage;
+  serverUrl?: string;
 }
 
 // Help loading initial localStorage values
@@ -237,6 +240,7 @@ export const useStore = create<AppState>((set, get) => ({
   // Theme State
   activeThemeId: loadLocalStorage<string>('glow_active_theme_id', 'afterglow-original'),
   language: loadLocalStorage<SupportedLanguage>('glow_language', 'en'),
+  serverUrl: loadLocalStorage<string>('glow_server_url', typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') ? window.location.origin : ''),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -303,6 +307,11 @@ export const useStore = create<AppState>((set, get) => ({
   }),
   
   setCurrentChannel: (channel) => set({ currentChannel: channel }),
+  
+  setServerUrl: (url) => set(() => {
+    saveLocalStorage('glow_server_url', url);
+    return { serverUrl: url };
+  }),
   
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   
@@ -539,6 +548,7 @@ export const useStore = create<AppState>((set, get) => ({
     localStorage.removeItem('glow_epg_inject_algo_density');
     localStorage.removeItem('glow_active_theme_id');
     localStorage.removeItem('glow_language');
+    localStorage.removeItem('glow_server_url');
     set({
       playlists: [],
       currentPlaylistId: null,
@@ -562,7 +572,8 @@ export const useStore = create<AppState>((set, get) => ({
       epgInjectSlots: [],
       epgInjectAlgoDensity: 30,
       activeThemeId: 'afterglow-original',
-      language: 'en'
+      language: 'en',
+      serverUrl: ''
     });
   },
 
@@ -587,6 +598,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (backup.isPremium !== undefined) saveLocalStorage('glow_is_premium', backup.isPremium);
     if (backup.activeThemeId !== undefined) saveLocalStorage('glow_active_theme_id', backup.activeThemeId);
     if (backup.language !== undefined) saveLocalStorage('glow_language', backup.language);
+    if (backup.serverUrl !== undefined) saveLocalStorage('glow_server_url', backup.serverUrl);
 
     return {
       playlists: backup.playlists !== undefined ? backup.playlists : state.playlists,
@@ -610,6 +622,7 @@ export const useStore = create<AppState>((set, get) => ({
       isPremium: backup.isPremium !== undefined ? backup.isPremium : state.isPremium,
       activeThemeId: backup.activeThemeId !== undefined ? backup.activeThemeId : state.activeThemeId,
       language: backup.language !== undefined ? backup.language : state.language,
+      serverUrl: backup.serverUrl !== undefined ? backup.serverUrl : state.serverUrl,
       activeCategory: 'All',
       epgData: {}
     };

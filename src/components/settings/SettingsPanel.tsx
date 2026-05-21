@@ -104,7 +104,8 @@ export const SettingsPanel: React.FC = () => {
         trialStartDate: state.trialStartDate,
         isPremium: state.isPremium,
         activeThemeId: state.activeThemeId,
-        language: state.language
+        language: state.language,
+        serverUrl: state.serverUrl
       };
 
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
