@@ -69,7 +69,7 @@ export const StylizedLogo: React.FC<StylizedLogoProps> = ({
         </g>
 
         {/* Stylized Capital A and horizontal swoop scaled up to fill space grandly */}
-        <g transform="translate(-20, -16.8) scale(1.4)">
+        <g transform="translate(-30, -20.6) scale(1.6)">
           {/* Stylized Capital A base legs - High-precision organic curvature */}
           <path
             d="M 50 16 C 42.5 16, 31.5 42, 25 74 L 37 74 C 40.5 54, 46.5 38.5, 50 38.5 C 53.5 38.5, 59.5 54, 63 74 L 75 74 C 68.5 42, 57.5 16, 50 16 Z"

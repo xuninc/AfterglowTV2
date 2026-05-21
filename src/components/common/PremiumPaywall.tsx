@@ -143,7 +143,7 @@ export const PremiumPaywall: React.FC<PaywallProps> = ({ daysRemaining, onClose,
           
           {/* Logo Brand heading */}
           <div className="flex items-center gap-2.5 mb-8 select-none">
-            <AfterglowLogo size={32} showBg={true} />
+            <AfterglowLogo size={44} showBg={true} />
             <div className="flex flex-col text-left">
               <span className="font-display text-sm font-black tracking-widest text-white leading-none">AFTERGLOW</span>
               <span className="text-[7px] font-mono text-afterglow-primary tracking-widest uppercase mt-0.5 font-bold">Premium Subscription</span>

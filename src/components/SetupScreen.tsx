@@ -158,7 +158,7 @@ export const SetupScreen: React.FC = () => {
         <div className="flex flex-col gap-2 border-b border-white/5 pb-4">
           <div className="flex items-center justify-between">
             <h1 className="text-4xl font-display font-black tracking-tighter italic text-white flex items-center gap-3.5">
-              <AfterglowLogo size={42} showBg={true} animated={true} />
+              <AfterglowLogo size={52} showBg={true} animated={true} />
               <span>AFTERGLOW <span className="text-afterglow-primary">TV</span></span>
             </h1>
             <div className="text-[10px] bg-white/5 border border-white/10 px-3 py-1 rounded-full font-mono text-white/40 tracking-[0.2em]">

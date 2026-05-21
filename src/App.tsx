@@ -20,6 +20,7 @@ import { PremiumPaywall } from './components/common/PremiumPaywall';
 import { applyThemePreset } from './utils/theme';
 import { AfterglowLogo } from './components/common/AfterglowLogo';
 import { StylizedLogo } from './components/common/StylizedLogo';
+import { TRANSLATIONS } from './utils/translations';
 
 export default function App() {
   const playlists = useStore(state => state.playlists);
@@ -34,6 +35,9 @@ export default function App() {
   const trialStartDate = useStore(state => state.trialStartDate);
   const isPremium = useStore(state => state.isPremium);
   const activeThemeId = useStore(state => state.activeThemeId);
+  const language = useStore(state => state.language);
+
+  const t = TRANSLATIONS[language];
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -83,9 +87,9 @@ export default function App() {
         animate={{ width: isSidebarOpen ? 260 : 76 }}
         className="h-full bg-afterglow-card/90 border-r border-white/5 flex flex-col py-8 z-[60] shrink-0"
       >
-        <div className="flex items-center gap-3 px-5 mb-12 select-none">
-          <Focusable id="nav-brand-toggle" className="w-10 h-10 flex items-center justify-center shrink-0 cursor-pointer" onEnter={() => toggleSidebar()}>
-            <AfterglowLogo size={40} showBg={true} animated={true} />
+        <div className={`flex items-center mb-12 select-none transition-all duration-300 ${isSidebarOpen ? 'gap-3 px-5' : 'justify-center px-0'}`}>
+          <Focusable id="nav-brand-toggle" className="w-12 h-12 flex items-center justify-center shrink-0 cursor-pointer" onEnter={() => toggleSidebar()}>
+            <AfterglowLogo size={46} showBg={true} animated={true} />
           </Focusable>
           {isSidebarOpen && (
             <div className="flex flex-col">
@@ -115,7 +119,7 @@ export default function App() {
             onEnter={() => setActiveView('guide')}
           >
             <Tv className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">LIVE BROADCAST</span>}
+            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">{t.navLiveTv}</span>}
           </Focusable>
 
           <Focusable 
@@ -126,7 +130,7 @@ export default function App() {
             }}
           >
             <LayoutGrid className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">VOD MOVIE BROWSER</span>}
+            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">{t.navVod}</span>}
           </Focusable>
 
           <Focusable 
@@ -135,7 +139,7 @@ export default function App() {
             onEnter={() => setActiveView('library')}
           >
             <Layers className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">AFTERGLOW VAULT</span>}
+            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">{t.navVault}</span>}
           </Focusable>
 
           <Focusable 
@@ -144,7 +148,7 @@ export default function App() {
             onEnter={() => setActiveView('dvr')}
           >
             <Disc className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">DVR RECORDER</span>}
+            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">{t.navDvr}</span>}
           </Focusable>
 
           <Focusable 
@@ -153,7 +157,7 @@ export default function App() {
             onEnter={() => setActiveView('settings')}
           >
             <Settings className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">SETTINGS (SYNC)</span>}
+            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">{t.navSettings}</span>}
           </Focusable>
         </div>
 
@@ -165,7 +169,7 @@ export default function App() {
               {isSidebarOpen && (
                 <div className="flex flex-col text-left">
                   <span className="font-mono text-[9px] font-black text-emerald-400 tracking-wider">AFTERGLOW</span>
-                  <span className="font-mono text-[8px] text-white/50 tracking-wider uppercase">PREMIUM ACTIVE</span>
+                  <span className="font-mono text-[8px] text-white/50 tracking-wider uppercase">{t.navPremiumActive}</span>
                 </div>
               )}
             </div>
@@ -175,8 +179,8 @@ export default function App() {
                 <Clock className="w-5 h-5 text-afterglow-primary shrink-0" />
                 {isSidebarOpen && (
                   <div className="flex flex-col text-left mr-auto">
-                    <span className="font-mono text-[9px] font-black text-afterglow-primary tracking-wider uppercase">FREE TRIAL</span>
-                    <span className="font-mono text-[8px] text-white/50 tracking-wider">{daysRemaining} DAYS LEFT</span>
+                    <span className="font-mono text-[8px] font-black text-afterglow-primary tracking-wider uppercase line-clamp-1">{t.navTrialDays}</span>
+                    <span className="font-mono text-[8px] text-white/50 tracking-wider">{daysRemaining} {language === 'es' ? 'DÍAS RESTANTES' : language === 'fr' ? 'JOURS RESTANTS' : 'DAYS REMAINING'}</span>
                   </div>
                 )}
               </div>
@@ -186,7 +190,7 @@ export default function App() {
                   onClick={() => setShowUpgradeModal(true)}
                   className="w-full py-2 bg-afterglow-primary/20 hover:bg-afterglow-primary text-afterglow-primary hover:text-white font-mono text-[8px] font-bold tracking-widest rounded-lg transition-all border border-afterglow-primary/30 uppercase cursor-pointer"
                 >
-                  {isSidebarOpen ? 'Upgrade License' : 'UPG'}
+                  {isSidebarOpen ? t.paywallUpgradeBtn || 'Upgrade License' : 'UPG'}
                 </button>
               </Focusable>
             </div>

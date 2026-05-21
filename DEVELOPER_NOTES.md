@@ -368,5 +368,57 @@ If deployed or synced with backends, the security schema protects users' systems
 
 ---
 
+## 🌐 Section 11: Internationalization (i18n) & Reactive Translation Architecture
+
+To make Afterglow TV eligible for global distribution (specifically on multi-language platforms like Amazon TV or standard Android TV markets), we've implemented a fully integrated translation pipeline. This engine functions without heavy external libraries (like `react-i18next`), maintaining a lightweight and extremely quick load profile.
+
+### 11.1 Supporting Language Types & Dictionary Mapping
+All available languages are strictly defined under `SupportedLanguage` union type:
+```typescript
+export type SupportedLanguage = 'en' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ja';
+```
+A robust dictionary map is declared in `/src/utils/translations.ts` as `TRANSLATIONS`. Each language has a complete `TranslationDict` containing navigation labels, paywalls, setup forms, and panel descriptions to avoid any unlocalized text.
+
+### 11.2 Reactivity through Zustand & State Streams
+1. **Persistent State Storage**: The active language state is stored as `language` inside `useStore`, backed by local storage persistence.
+2. **Component Translation Destructuring**: Every component accesses the dictionary instantly by fetching the active map:
+   ```typescript
+   const language = useStore(state => state.language);
+   const t = TRANSLATIONS[language];
+   ```
+3. **Instant Hot Swapping**: When the state is mutated via `setLanguage`, all active UI nodes re-render instantly with the new translated words, requiring zero reload operations or socket refreshes.
+
+---
+
+## 📐 Section 12: Advanced Vector Logo Scaling & Translation Offsets
+
+Understanding how Afterglow's premium vector "A" fits into various small containers (such as a 76px wide collapsed sidebar) requires analyzing its underlying coordinate systems and transformation mathematics.
+
+### 12.1 The SVG ViewBox Matrix
+The root vector element in `/src/components/common/StylizedLogo.tsx` is defined with a standard coordinate bounding box:
+* **viewBox**: `0 0 100 100`
+
+### 12.2 Scale Transformation Formula (S=1.6)
+To maximize the visually stunning capital "A" and its flowing swoosh crossbar (ensuring it never appears small), we scale the relative coordinates up from their base definitions by a scale factor $S = 1.6$.
+
+To keep the shape perfectly centered in the horizontal space, we solve for the translation offset $T_x$ using the horizontal midpoint equation:
+$$x_{\text{center}} \cdot S + T_x = x_{\text{center}}$$
+
+Since the midpoint of our 100x100 viewport is $x_{\text{center}} = 50$:
+$$50 \cdot 1.6 + T_x = 50 \implies 80 + T_x = 50 \implies T_x = -30$$
+
+To calculate the Y-axis alignment offset $T_y$ so that the top curves of the neon glow reside exactly with a $5\%$ safety gutter at the top margin ($y_{\text{target}} = 5$):
+The top-most vertex of the base "A" legs is defined at $y_{\text{initial}} = 16$. Thus, we solve for $T_y$:
+$$y_{\text{initial}} \cdot S + T_y = y_{\text{target}}$$
+$$16 \cdot 1.6 + T_y = 5 \implies 25.6 + T_y = 5 \implies T_y = -20.6$$
+
+This yields perfect symmetry:
+* **Maximum scale factor**: `scale(1.6)`
+* **Precise geometric shift**: `translate(-30, -20.6)`
+
+This ensures the organic legs (extending down to $y = 74$, which maps to $74 \cdot 1.6 - 20.6 = 97.8$) do not exceed the $100$ viewport limit, guaranteeing that the stylized neon shape is beautifully visible and does not appear small.
+
+---
+
 ## 🎖️ Conclusion
 This file documents every critical aspect of Afterglow TV. Its blend of desktop-first responsiveness, Android TV spatial keyboard control, and flexible theme architecture provides a solid, highly polished foundation for users and developers alike.

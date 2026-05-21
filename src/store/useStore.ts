@@ -154,6 +154,32 @@ interface AppState {
   deleteRecording: (id: string) => void;
   triggerMockRecordingComplete: (jobId: string) => void;
   resetAll: () => void;
+  importBackup: (backup: AfterglowBackup) => void;
+}
+
+export interface AfterglowBackup {
+  version: number;
+  timestamp: string;
+  playlists?: Playlist[];
+  currentPlaylistId?: string | null;
+  dvrSchedule?: DVRJob[];
+  dvrRecordings?: DVRRecording[];
+  mediaLibrary?: MediaMetadata[];
+  monitoredFolders?: MonitoredFolder[];
+  isTitleCleaningEnabled?: boolean;
+  isMarqueeEnabled?: boolean;
+  isBackgroundEnrichmentEnabled?: boolean;
+  vodLayoutMode?: 'grid' | 'epg' | 'shelf';
+  isVaultSubstitutionEnabled?: boolean;
+  isEpgInjectEnabled?: boolean;
+  epgInjectMode?: 'algorithmic' | 'manual';
+  epgInjectChannels?: string[];
+  epgInjectSlots?: EpgInjectSlot[];
+  epgInjectAlgoDensity?: number;
+  trialStartDate?: string;
+  isPremium?: boolean;
+  activeThemeId?: string;
+  language?: SupportedLanguage;
 }
 
 // Help loading initial localStorage values
@@ -538,5 +564,54 @@ export const useStore = create<AppState>((set, get) => ({
       activeThemeId: 'afterglow-original',
       language: 'en'
     });
-  }
+  },
+
+  importBackup: (backup) => set((state) => {
+    if (backup.playlists !== undefined) saveLocalStorage('glow_playlists', backup.playlists);
+    if (backup.currentPlaylistId !== undefined) saveLocalStorage('glow_current_playlist_id', backup.currentPlaylistId);
+    if (backup.dvrSchedule !== undefined) saveLocalStorage('glow_dvr_schedule', backup.dvrSchedule);
+    if (backup.dvrRecordings !== undefined) saveLocalStorage('glow_dvr_recordings', backup.dvrRecordings);
+    if (backup.mediaLibrary !== undefined) saveLocalStorage('glow_media_library', backup.mediaLibrary);
+    if (backup.monitoredFolders !== undefined) saveLocalStorage('glow_monitored_folders', backup.monitoredFolders);
+    if (backup.isTitleCleaningEnabled !== undefined) saveLocalStorage('glow_title_cleaning_enabled', backup.isTitleCleaningEnabled);
+    if (backup.isMarqueeEnabled !== undefined) saveLocalStorage('glow_marquee_enabled', backup.isMarqueeEnabled);
+    if (backup.isBackgroundEnrichmentEnabled !== undefined) saveLocalStorage('glow_background_enrichment_enabled', backup.isBackgroundEnrichmentEnabled);
+    if (backup.vodLayoutMode !== undefined) saveLocalStorage('glow_vod_layout_mode', backup.vodLayoutMode);
+    if (backup.isVaultSubstitutionEnabled !== undefined) saveLocalStorage('glow_vault_substitution_enabled', backup.isVaultSubstitutionEnabled);
+    if (backup.isEpgInjectEnabled !== undefined) saveLocalStorage('glow_epg_inject_enabled', backup.isEpgInjectEnabled);
+    if (backup.epgInjectMode !== undefined) saveLocalStorage('glow_epg_inject_mode', backup.epgInjectMode);
+    if (backup.epgInjectChannels !== undefined) saveLocalStorage('glow_epg_inject_channels', backup.epgInjectChannels);
+    if (backup.epgInjectSlots !== undefined) saveLocalStorage('glow_epg_inject_slots', backup.epgInjectSlots);
+    if (backup.epgInjectAlgoDensity !== undefined) saveLocalStorage('glow_epg_inject_algo_density', backup.epgInjectAlgoDensity);
+    if (backup.trialStartDate !== undefined) saveLocalStorage('glow_trial_start_date', backup.trialStartDate);
+    if (backup.isPremium !== undefined) saveLocalStorage('glow_is_premium', backup.isPremium);
+    if (backup.activeThemeId !== undefined) saveLocalStorage('glow_active_theme_id', backup.activeThemeId);
+    if (backup.language !== undefined) saveLocalStorage('glow_language', backup.language);
+
+    return {
+      playlists: backup.playlists !== undefined ? backup.playlists : state.playlists,
+      currentPlaylistId: backup.currentPlaylistId !== undefined ? backup.currentPlaylistId : state.currentPlaylistId,
+      currentChannel: null,
+      dvrSchedule: backup.dvrSchedule !== undefined ? backup.dvrSchedule : state.dvrSchedule,
+      dvrRecordings: backup.dvrRecordings !== undefined ? backup.dvrRecordings : state.dvrRecordings,
+      mediaLibrary: backup.mediaLibrary !== undefined ? backup.mediaLibrary : state.mediaLibrary,
+      monitoredFolders: backup.monitoredFolders !== undefined ? backup.monitoredFolders : state.monitoredFolders,
+      isTitleCleaningEnabled: backup.isTitleCleaningEnabled !== undefined ? backup.isTitleCleaningEnabled : state.isTitleCleaningEnabled,
+      isMarqueeEnabled: backup.isMarqueeEnabled !== undefined ? backup.isMarqueeEnabled : state.isMarqueeEnabled,
+      isBackgroundEnrichmentEnabled: backup.isBackgroundEnrichmentEnabled !== undefined ? backup.isBackgroundEnrichmentEnabled : state.isBackgroundEnrichmentEnabled,
+      vodLayoutMode: backup.vodLayoutMode !== undefined ? backup.vodLayoutMode : state.vodLayoutMode,
+      isVaultSubstitutionEnabled: backup.isVaultSubstitutionEnabled !== undefined ? backup.isVaultSubstitutionEnabled : state.isVaultSubstitutionEnabled,
+      isEpgInjectEnabled: backup.isEpgInjectEnabled !== undefined ? backup.isEpgInjectEnabled : state.isEpgInjectEnabled,
+      epgInjectMode: backup.epgInjectMode !== undefined ? backup.epgInjectMode : state.epgInjectMode,
+      epgInjectChannels: backup.epgInjectChannels !== undefined ? backup.epgInjectChannels : state.epgInjectChannels,
+      epgInjectSlots: backup.epgInjectSlots !== undefined ? backup.epgInjectSlots : state.epgInjectSlots,
+      epgInjectAlgoDensity: backup.epgInjectAlgoDensity !== undefined ? backup.epgInjectAlgoDensity : state.epgInjectAlgoDensity,
+      trialStartDate: backup.trialStartDate !== undefined ? backup.trialStartDate : state.trialStartDate,
+      isPremium: backup.isPremium !== undefined ? backup.isPremium : state.isPremium,
+      activeThemeId: backup.activeThemeId !== undefined ? backup.activeThemeId : state.activeThemeId,
+      language: backup.language !== undefined ? backup.language : state.language,
+      activeCategory: 'All',
+      epgData: {}
+    };
+  })
 }));

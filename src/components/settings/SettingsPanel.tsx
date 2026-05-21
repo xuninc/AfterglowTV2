@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard, Database, Tv, Sliders, Calendar, Languages } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard, Database, Tv, Sliders, Calendar, Languages, Download, Upload, FileJson } from 'lucide-react';
 import { Focusable } from '../common/Focusable';
 import { useStore } from '../../store/useStore';
 import axios from 'axios';
@@ -15,6 +15,7 @@ export const SettingsPanel: React.FC = () => {
   const removePlaylist = useStore(state => state.removePlaylist);
   const resetAll = useStore(state => state.resetAll);
   const updatePlaylistEpgUrl = useStore(state => state.updatePlaylistEpgUrl);
+  const importBackup = useStore(state => state.importBackup);
 
   const language = useStore(state => state.language);
   const setLanguage = useStore(state => state.setLanguage);
@@ -59,6 +60,7 @@ export const SettingsPanel: React.FC = () => {
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [syncMsg, setSyncMsg] = useState('');
+  const [backupFeedback, setBackupFeedback] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({ type: 'idle', message: '' });
 
   // Manual EPG custom slots form state
   const [slotChannelId, setSlotChannelId] = useState('');
@@ -76,6 +78,77 @@ export const SettingsPanel: React.FC = () => {
   const diffTime = Math.max(0, now.getTime() - start.getTime());
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
   const daysRemaining = Math.max(0, 15 - diffDays);
+
+  const exportBackup = () => {
+    try {
+      const state = useStore.getState();
+      const backupData = {
+        version: 1,
+        timestamp: new Date().toISOString(),
+        playlists: state.playlists,
+        currentPlaylistId: state.currentPlaylistId,
+        dvrSchedule: state.dvrSchedule,
+        dvrRecordings: state.dvrRecordings,
+        mediaLibrary: state.mediaLibrary,
+        monitoredFolders: state.monitoredFolders,
+        isTitleCleaningEnabled: state.isTitleCleaningEnabled,
+        isMarqueeEnabled: state.isMarqueeEnabled,
+        isBackgroundEnrichmentEnabled: state.isBackgroundEnrichmentEnabled,
+        vodLayoutMode: state.vodLayoutMode,
+        isVaultSubstitutionEnabled: state.isVaultSubstitutionEnabled,
+        isEpgInjectEnabled: state.isEpgInjectEnabled,
+        epgInjectMode: state.epgInjectMode,
+        epgInjectChannels: state.epgInjectChannels,
+        epgInjectSlots: state.epgInjectSlots,
+        epgInjectAlgoDensity: state.epgInjectAlgoDensity,
+        trialStartDate: state.trialStartDate,
+        isPremium: state.isPremium,
+        activeThemeId: state.activeThemeId,
+        language: state.language
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute("download", `afterglow-tv-backup-${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      setBackupFeedback({ type: 'success', message: 'Preferences and media library database exported successfully!' });
+    } catch (err) {
+      setBackupFeedback({ type: 'error', message: 'Failed to create export database backup.' });
+    }
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        
+        if (!parsed.playlists && !parsed.mediaLibrary && parsed.isPremium === undefined) {
+          setBackupFeedback({ type: 'error', message: 'Invalid file format. This is not an Afterglow TV configuration backup.' });
+          return;
+        }
+
+        importBackup(parsed);
+        const playlistCount = parsed.playlists?.length || 0;
+        const mediaCount = parsed.mediaLibrary?.length || 0;
+        setBackupFeedback({ 
+          type: 'success', 
+          message: `Database successfully restored! Loaded ${playlistCount} playlist(s), ${mediaCount} media files, and active tuner configurations.` 
+        });
+      } catch (err) {
+        setBackupFeedback({ type: 'error', message: 'Fail to parse file. Confirm the selection is a valid JSON backup.' });
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // EPG configuration manager state
   const [customEpgUrl, setCustomEpgUrl] = useState(currentPlaylist?.epgUrl || '');
@@ -326,6 +399,50 @@ export const SettingsPanel: React.FC = () => {
                 {isVaultSubstitutionEnabled ? 'ACTIVE / ON' : 'DISABLED / OFF'}
               </Focusable>
             </div>
+          </div>
+        </div>
+
+        {/* Language customization configuration block */}
+        <div className="bg-afterglow-card/40 border border-white/5 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 w-80 h-40 bg-indigo-500/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div className="border-b border-white/5 pb-4">
+            <h3 className="text-sm font-mono text-white/95 tracking-widest uppercase flex items-center gap-2">
+              <Languages className="w-4 h-4 text-indigo-400 animate-pulse" />
+              <span>{t.setLanguageLabel || "RECEIVER INTERFACE LANGUAGE"}</span>
+            </h3>
+            <p className="text-[10px] text-white/40 font-mono mt-1 max-w-2xl leading-relaxed">
+              {t.setLanguageDesc || "Configure the active interface translation maps. Changing this instantly translates navigations, labels, paywalls, and system directories across the entire layout."}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+            {[
+              { code: 'en', name: 'ENGLISH', flag: '🇬🇧' },
+              { code: 'es', name: 'ESPAÑOL', flag: '🇪🇸' },
+              { code: 'fr', name: 'FRANÇAIS', flag: '🇫🇷' },
+              { code: 'de', name: 'DEUTSCH', flag: '🇩🇪' },
+              { code: 'it', name: 'ITALIANO', flag: '🇮🇹' },
+              { code: 'pt', name: 'PORTUGUÊS', flag: '🇵🇹' },
+              { code: 'ja', name: '日本語', flag: '🇯🇵' },
+            ].map((lang) => {
+              const isActive = language === lang.code;
+              return (
+                <Focusable
+                  key={lang.code}
+                  id={`btn-lang-${lang.code}`}
+                  className={`p-3.5 rounded-xl border text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5 select-none ${
+                    isActive 
+                      ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300 shadow-glow ring-1 ring-indigo-500/30' 
+                      : 'bg-black/25 border-white/5 hover:border-white/15 text-white/60 hover:text-white'
+                  }`}
+                  onEnter={() => setLanguage(lang.code as SupportedLanguage)}
+                >
+                  <span className="text-xl leading-none">{lang.flag}</span>
+                  <span className="text-[10px] font-mono font-bold tracking-widest">{lang.name}</span>
+                </Focusable>
+              );
+            })}
           </div>
         </div>
 
@@ -913,6 +1030,96 @@ export const SettingsPanel: React.FC = () => {
             </div>
 
           </div>
+        </div>
+
+        {/* Full JSON Database Backup & Restore Center */}
+        <div className="bg-afterglow-card/40 border border-white/5 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 w-80 h-40 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div className="border-b border-white/5 pb-4">
+            <h3 className="text-sm font-mono text-white/95 tracking-widest uppercase flex items-center gap-2">
+              <FileJson className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span>DATABASE BACKUP & RESTORE UTILITY</span>
+            </h3>
+            <p className="text-[10px] text-white/40 font-mono mt-1 max-w-2xl leading-relaxed">
+              Export your entire receiver cache, IPTV playlist server links, custom virtual broadcaster EPG slots, and active Afterglow Vault media library database indexes. Restore any backup file instantly on any smart device.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Export block */}
+            <div className="bg-black/25 border border-white/5 p-5 rounded-xl flex flex-col justify-between gap-4">
+              <div className="text-left space-y-1.5">
+                <span className="text-xs font-bold text-white font-display uppercase tracking-wider flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  Export Configuration
+                </span>
+                <p className="text-[10px] text-white/40 leading-normal">
+                  Download a secure, portable, plain-text JSON snapshot of your current settings, custom schedules, and indexed media database files.
+                </p>
+              </div>
+
+              <Focusable
+                id="btn-settings-backup-export"
+                className="w-full font-mono text-[10px] font-bold tracking-wider uppercase bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white py-2.5 px-4 border border-emerald-500/20 hover:border-emerald-500 rounded-lg text-center cursor-pointer flex items-center justify-center gap-2 transition-all mt-2"
+                onEnter={exportBackup}
+              >
+                <Download className="w-3.5 h-3.5" />
+                CREATE BACKUP FILE (.JSON)
+              </Focusable>
+            </div>
+
+            {/* Import block */}
+            <div className="bg-black/25 border border-white/5 p-5 rounded-xl flex flex-col justify-between gap-4 relative">
+              <div className="text-left space-y-1.5">
+                <span className="text-xs font-bold text-white font-display uppercase tracking-wider flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5 text-indigo-400" />
+                  Restore Configuration
+                </span>
+                <p className="text-[10px] text-white/40 leading-normal">
+                  Upload an existing `.json` backup. This will instantly refresh your playlists, custom schedule configurations, and Vault database.
+                </p>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="file"
+                  id="afterglow-restore-file-input"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportFileChange}
+                />
+                
+                <Focusable
+                  id="btn-settings-backup-import"
+                  className="w-full font-mono text-[10px] font-bold tracking-wider uppercase bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white py-2.5 px-4 border border-indigo-500/20 hover:border-indigo-500 rounded-lg text-center cursor-pointer flex items-center justify-center gap-2 transition-all mt-2"
+                  onEnter={() => {
+                    const input = document.getElementById('afterglow-restore-file-input');
+                    input?.click();
+                  }}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  UPLOAD & RESTORE BACKUP
+                </Focusable>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Feedback messages */}
+          {backupFeedback.type !== 'idle' && (
+            <div className={`mt-2 flex items-start gap-2.5 px-4 py-3 rounded-xl border font-mono text-[10px] self-stretch text-left animate-fade-in ${
+              backupFeedback.type === 'success' 
+                ? 'bg-emerald-950/20 border-emerald-500/25 text-emerald-400' 
+                : 'bg-red-950/20 border-red-500/25 text-red-400'
+            }`}>
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{backupFeedback.message}</span>
+            </div>
+          )}
+
         </div>
 
         {/* Power Controls / reset */}
