@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { Focusable } from './Focusable';
+import { AfterglowLogo } from './AfterglowLogo';
 
 interface PaywallProps {
   daysRemaining: number;
@@ -142,9 +143,7 @@ export const PremiumPaywall: React.FC<PaywallProps> = ({ daysRemaining, onClose,
           
           {/* Logo Brand heading */}
           <div className="flex items-center gap-2.5 mb-8 select-none">
-            <span className="w-8 h-8 rounded-full afterglow-gradient flex items-center justify-center shadow-glow shrink-0">
-              <span className="font-display font-black text-xs italic">A</span>
-            </span>
+            <AfterglowLogo size={32} showBg={true} />
             <div className="flex flex-col text-left">
               <span className="font-display text-sm font-black tracking-widest text-white leading-none">AFTERGLOW</span>
               <span className="text-[7px] font-mono text-afterglow-primary tracking-widest uppercase mt-0.5 font-bold">Premium Subscription</span>

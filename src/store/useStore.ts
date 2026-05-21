@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { MediaMetadata } from '../types/media';
 
+export interface EpgInjectSlot {
+  id: string;
+  channelId: string; // tvgId representing channel
+  hour: number;      // 0 - 23 (hour of day)
+  mediaTitle: string; // The selected rawTitle or displayTitle from vault to insert
+}
+
 export interface Channel {
   id?: string;
   name: string;
@@ -76,10 +83,21 @@ interface AppState {
   isMarqueeEnabled: boolean;
   isBackgroundEnrichmentEnabled: boolean;
   vodLayoutMode: 'grid' | 'epg' | 'shelf';
+  isVaultSubstitutionEnabled: boolean;
+  
+  // EPG Vault Injector (Virtual Broadcaster) state
+  isEpgInjectEnabled: boolean;
+  epgInjectMode: 'algorithmic' | 'manual';
+  epgInjectChannels: string[]; // tvgIds that are allowed to be replaced
+  epgInjectSlots: EpgInjectSlot[];
+  epgInjectAlgoDensity: number; // 0-100 density percentage
   
   // Subscription / Trial State
   trialStartDate: string;
   isPremium: boolean;
+  
+  // Theme System States
+  activeThemeId: string;
   
   // Actions
   addPlaylist: (playlist: Playlist) => void;
@@ -108,11 +126,24 @@ interface AppState {
   setMarqueeEnabled: (val: boolean) => void;
   setBackgroundEnrichmentEnabled: (val: boolean) => void;
   setVodLayoutMode: (mode: 'grid' | 'epg' | 'shelf') => void;
+  setVaultSubstitutionEnabled: (val: boolean) => void;
+  
+  // EPG Vault Injector (Virtual Broadcaster) actions
+  setEpgInjectEnabled: (val: boolean) => void;
+  setEpgInjectMode: (mode: 'algorithmic' | 'manual') => void;
+  setEpgInjectChannels: (channels: string[]) => void;
+  setEpgInjectSlots: (slots: EpgInjectSlot[]) => void;
+  setEpgInjectAlgoDensity: (density: number) => void;
+  addEpgInjectSlot: (slot: EpgInjectSlot) => void;
+  removeEpgInjectSlot: (id: string) => void;
   
   // Premium / Trial Actions
   buyPremium: () => void;
   resetTrial: () => void;
   setTrialStartDate: (date: string) => void;
+  
+  // Theme Actions
+  setActiveThemeId: (id: string) => void;
   
   // DVR Actions
   scheduleRecording: (job: Omit<DVRJob, 'id' | 'status'>) => void;
@@ -161,10 +192,21 @@ export const useStore = create<AppState>((set, get) => ({
   isMarqueeEnabled: loadLocalStorage<boolean>('glow_marquee_enabled', true),
   isBackgroundEnrichmentEnabled: loadLocalStorage<boolean>('glow_background_enrichment_enabled', true),
   vodLayoutMode: loadLocalStorage<'grid' | 'epg' | 'shelf'>('glow_vod_layout_mode', 'epg'),
+  isVaultSubstitutionEnabled: loadLocalStorage<boolean>('glow_vault_substitution_enabled', true),
+  
+  // EPG Vault Injector (Virtual Broadcaster) default initialization
+  isEpgInjectEnabled: loadLocalStorage<boolean>('glow_epg_inject_enabled', true),
+  epgInjectMode: loadLocalStorage<'algorithmic' | 'manual'>('glow_epg_inject_mode', 'algorithmic'),
+  epgInjectChannels: loadLocalStorage<string[]>('glow_epg_inject_channels', ["nasa.hd", "bunny.live"]),
+  epgInjectSlots: loadLocalStorage<EpgInjectSlot[]>('glow_epg_inject_slots', []),
+  epgInjectAlgoDensity: loadLocalStorage<number>('glow_epg_inject_algo_density', 30),
   
   // Subscription / Trial State
   trialStartDate: loadLocalStorage<string>('glow_trial_start_date', new Date().toISOString()),
   isPremium: loadLocalStorage<boolean>('glow_is_premium', false),
+  
+  // Theme State
+  activeThemeId: loadLocalStorage<string>('glow_active_theme_id', 'afterglow-original'),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -329,6 +371,41 @@ export const useStore = create<AppState>((set, get) => ({
     saveLocalStorage('glow_vod_layout_mode', mode);
     set({ vodLayoutMode: mode });
   },
+  setVaultSubstitutionEnabled: (val) => {
+    saveLocalStorage('glow_vault_substitution_enabled', val);
+    set({ isVaultSubstitutionEnabled: val });
+  },
+  
+  setEpgInjectEnabled: (val) => {
+    saveLocalStorage('glow_epg_inject_enabled', val);
+    set({ isEpgInjectEnabled: val });
+  },
+  setEpgInjectMode: (mode) => {
+    saveLocalStorage('glow_epg_inject_mode', mode);
+    set({ epgInjectMode: mode });
+  },
+  setEpgInjectChannels: (channels) => {
+    saveLocalStorage('glow_epg_inject_channels', channels);
+    set({ epgInjectChannels: channels });
+  },
+  setEpgInjectSlots: (slots) => {
+    saveLocalStorage('glow_epg_inject_slots', slots);
+    set({ epgInjectSlots: slots });
+  },
+  setEpgInjectAlgoDensity: (density) => {
+    saveLocalStorage('glow_epg_inject_algo_density', density);
+    set({ epgInjectAlgoDensity: density });
+  },
+  addEpgInjectSlot: (slot) => set((state) => {
+    const updated = [...state.epgInjectSlots, slot];
+    saveLocalStorage('glow_epg_inject_slots', updated);
+    return { epgInjectSlots: updated };
+  }),
+  removeEpgInjectSlot: (id) => set((state) => {
+    const updated = state.epgInjectSlots.filter(s => s.id !== id);
+    saveLocalStorage('glow_epg_inject_slots', updated);
+    return { epgInjectSlots: updated };
+  }),
 
   buyPremium: () => {
     saveLocalStorage('glow_is_premium', true);
@@ -345,6 +422,11 @@ export const useStore = create<AppState>((set, get) => ({
   setTrialStartDate: (date) => {
     saveLocalStorage('glow_trial_start_date', date);
     set({ trialStartDate: date });
+  },
+
+  setActiveThemeId: (id) => {
+    saveLocalStorage('glow_active_theme_id', id);
+    set({ activeThemeId: id });
   },
 
   scheduleRecording: (newItem) => set((state) => {
@@ -414,6 +496,13 @@ export const useStore = create<AppState>((set, get) => ({
     localStorage.removeItem('glow_monitored_folders');
     localStorage.removeItem('glow_trial_start_date');
     localStorage.removeItem('glow_is_premium');
+    localStorage.removeItem('glow_vault_substitution_enabled');
+    localStorage.removeItem('glow_epg_inject_enabled');
+    localStorage.removeItem('glow_epg_inject_mode');
+    localStorage.removeItem('glow_epg_inject_channels');
+    localStorage.removeItem('glow_epg_inject_slots');
+    localStorage.removeItem('glow_epg_inject_algo_density');
+    localStorage.removeItem('glow_active_theme_id');
     set({
       playlists: [],
       currentPlaylistId: null,
@@ -429,7 +518,14 @@ export const useStore = create<AppState>((set, get) => ({
       libraryScannerProgress: { total: 0, processed: 0, currentItemName: '' },
       monitoredFolders: [],
       trialStartDate: new Date().toISOString(),
-      isPremium: false
+      isPremium: false,
+      isVaultSubstitutionEnabled: true,
+      isEpgInjectEnabled: true,
+      epgInjectMode: 'algorithmic',
+      epgInjectChannels: ["nasa.hd", "bunny.live"],
+      epgInjectSlots: [],
+      epgInjectAlgoDensity: 30,
+      activeThemeId: 'afterglow-original'
     });
   }
 }));

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
-import { LayoutGrid, Play, Settings, Tv, Disc, Menu, Layers, Rows3, Sparkles, Clock, ShieldCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { LayoutGrid, Play, Settings, Tv, Disc, Menu, Layers, Sparkles, Clock, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from './store/useStore';
 import { useTVNavigation } from './hooks/useTVNavigation';
@@ -17,6 +17,9 @@ import { SettingsPanel } from './components/settings/SettingsPanel';
 import { MediaLibrary } from './components/library/MediaLibrary';
 import { Player } from './components/video/Player';
 import { PremiumPaywall } from './components/common/PremiumPaywall';
+import { applyThemePreset } from './utils/theme';
+import { AfterglowLogo } from './components/common/AfterglowLogo';
+import { StylizedLogo } from './components/common/StylizedLogo';
 
 export default function App() {
   const playlists = useStore(state => state.playlists);
@@ -30,8 +33,13 @@ export default function App() {
   
   const trialStartDate = useStore(state => state.trialStartDate);
   const isPremium = useStore(state => state.isPremium);
+  const activeThemeId = useStore(state => state.activeThemeId);
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  useEffect(() => {
+    applyThemePreset(activeThemeId);
+  }, [activeThemeId]);
 
   useTVNavigation();
 
@@ -76,8 +84,8 @@ export default function App() {
         className="h-full bg-afterglow-card/90 border-r border-white/5 flex flex-col py-8 z-[60] shrink-0"
       >
         <div className="flex items-center gap-3 px-5 mb-12 select-none">
-          <Focusable id="nav-brand-toggle" className="w-10 h-10 rounded-full afterglow-gradient flex items-center justify-center shadow-glow shrink-0" onEnter={() => toggleSidebar()}>
-            <span className="font-display font-black text-xs italic">A</span>
+          <Focusable id="nav-brand-toggle" className="w-10 h-10 flex items-center justify-center shrink-0 cursor-pointer" onEnter={() => toggleSidebar()}>
+            <AfterglowLogo size={40} showBg={true} animated={true} />
           </Focusable>
           {isSidebarOpen && (
             <div className="flex flex-col">
@@ -111,23 +119,10 @@ export default function App() {
           </Focusable>
 
           <Focusable 
-            id="nav-vod-guide" 
-            className={`p-3.5 rounded-xl flex items-center gap-4 transition-colors ${(activeView === 'vod' && vodLayoutMode === 'epg') ? 'bg-white/10 text-afterglow-primary border-l-2 border-afterglow-primary rounded-l-none' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}
-            onEnter={() => {
-              setActiveView('vod');
-              setVodLayoutMode('epg');
-            }}
-          >
-            <Rows3 className="w-5 h-5 shrink-0" />
-            {isSidebarOpen && <span className="font-mono text-[10px] tracking-widest">VOD TV GUIDE</span>}
-          </Focusable>
-
-          <Focusable 
             id="nav-vod" 
-            className={`p-3.5 rounded-xl flex items-center gap-4 transition-colors ${(activeView === 'vod' && vodLayoutMode !== 'epg') ? 'bg-white/10 text-afterglow-primary border-l-2 border-afterglow-primary rounded-l-none' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}
+            className={`p-3.5 rounded-xl flex items-center gap-4 transition-colors ${activeView === 'vod' ? 'bg-white/10 text-afterglow-primary border-l-2 border-afterglow-primary rounded-l-none' : 'text-white/50 hover:bg-white/5 hover:text-white'}`}
             onEnter={() => {
               setActiveView('vod');
-              setVodLayoutMode('grid');
             }}
           >
             <LayoutGrid className="w-5 h-5 shrink-0" />

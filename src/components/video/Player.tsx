@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import Hls from 'hls.js';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertCircle, RefreshCw, EyeOff, ShieldAlert } from 'lucide-react';
+import { AlertCircle, RefreshCw, EyeOff, ShieldAlert, Sparkles, Database, Tv, Cpu, ArrowUpRight } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { Focusable } from '../common/Focusable';
 import { DEMO_LIVE_CHANNELS } from '../../data/demoData';
+import { generateMockProgramsForChannel } from '../../utils/epgGenerator';
+import { parseMediaTitle, calculateMiniLMSimilarity } from '../../utils/localMetadataDatabase';
 
 interface PlayerProps {
   url: string;
@@ -15,25 +17,125 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const preFetchHlsRef = useRef<Hls | null>(null);
-  const preFetchUrl = useStore(state => state.preFetchUrl);
   
+  const preFetchUrl = useStore(state => state.preFetchUrl);
+  const currentChannel = useStore(state => state.currentChannel);
+  const mediaLibrary = useStore(state => state.mediaLibrary);
+  const epgData = useStore(state => state.epgData);
+  const isVaultSubstitutionEnabled = useStore(state => state.isVaultSubstitutionEnabled);
+
   const [ambientColor, setAmbientColor] = useState('rgba(255, 62, 0, 0.2)');
   const [playerError, setPlayerError] = useState<string | null>(null);
-  const [currentActiveUrl, setCurrentActiveUrl] = useState(url);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
+  const [forcedFallbackUrl, setForcedFallbackUrl] = useState<string | null>(null);
 
-  // Sync state with prop url
+  // Session override for the current channel playback
+  const [userBypassedVault, setUserBypassedVault] = useState(false);
+
+  // Clear session override when tuning to a different channel
   useEffect(() => {
-    setCurrentActiveUrl(url);
-    setPlayerError(null);
+    setUserBypassedVault(false);
     setIsUsingFallback(false);
+    setPlayerError(null);
+    setForcedFallbackUrl(null);
   }, [url]);
+
+  // 1. Vault Sub-In Matches Engine
+  const vaultMatch = useMemo(() => {
+    if (!isVaultSubstitutionEnabled || !currentChannel || userBypassedVault) return null;
+
+    const tvgId = currentChannel.tvgId;
+    if (!tvgId) return null;
+
+    // Retrieve storing or dynamic EPG channels schedule
+    let programs = epgData[tvgId] || [];
+    if (programs.length === 0) {
+      programs = generateMockProgramsForChannel(tvgId, new Date());
+    }
+
+    const now = new Date();
+    // Find program overlapping current clock
+    const activeProgram = programs.find((p: any) => {
+      const pStart = new Date(p.start);
+      const pEnd = new Date(p.end);
+      return now >= pStart && now <= pEnd;
+    });
+
+    if (!activeProgram) return null;
+
+    // Parse broadcast title
+    const parsedProg = parseMediaTitle(activeProgram.title);
+
+    // Search personal database
+    let matchedItem = null;
+    for (const item of mediaLibrary) {
+      const parsedItem = parseMediaTitle(item.rawTitle);
+      
+      if (parsedProg.mediaType === 'tv_episode' && parsedItem.mediaType === 'tv_episode') {
+        if (
+          parsedProg.showTitle &&
+          parsedItem.showTitle &&
+          parsedProg.showTitle.toLowerCase() === parsedItem.showTitle.toLowerCase() &&
+          parsedProg.season === parsedItem.season &&
+          parsedProg.episode === parsedItem.episode
+        ) {
+          matchedItem = item;
+          break;
+        }
+      } else if (parsedProg.mediaType === 'movie' && parsedItem.mediaType === 'movie') {
+        const score = calculateMiniLMSimilarity(parsedProg.cleanedTitle, parsedItem.cleanedTitle);
+        if (score >= 0.82) {
+          matchedItem = item;
+          break;
+        }
+      }
+
+      // Fallback simple string match
+      const pTitleLower = activeProgram.title.toLowerCase();
+      const itemTitleLower = item.rawTitle.toLowerCase();
+      if (
+        pTitleLower.includes(itemTitleLower) ||
+        itemTitleLower.includes(pTitleLower)
+      ) {
+        matchedItem = item;
+        break;
+      }
+    }
+
+    if (matchedItem) {
+      const startMs = new Date(activeProgram.start).getTime();
+      const offsetSec = Math.max(0, (now.getTime() - startMs) / 1000);
+      return {
+        item: matchedItem,
+        program: activeProgram,
+        offsetSeconds: offsetSec
+      };
+    }
+
+    return null;
+  }, [isVaultSubstitutionEnabled, currentChannel, mediaLibrary, epgData, userBypassedVault]);
+
+  const isVaultSubActive = vaultMatch && !userBypassedVault;
+
+  // Resolve target media stream
+  const getSubstitutedStreamUrl = (title: string) => {
+    const t = title.toLowerCase();
+    if (t.includes("sintel")) return "https://test-streams.mux.dev/x36xhg/main.m3u8";
+    if (t.includes("steel")) return "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8";
+    if (t.includes("bunny")) return "https://test-streams.mux.dev/pts_live/character_multi_sub.m3u8";
+    return "https://test-streams.mux.dev/x36xhg/main.m3u8"; // High stable primary playback
+  };
+
+  const currentActiveUrl = forcedFallbackUrl
+    ? forcedFallbackUrl
+    : (isVaultSubActive && vaultMatch
+      ? getSubstitutedStreamUrl(vaultMatch.item.displayTitle)
+      : url);
 
   // Pre-fetching Logic (Neural Warm-up) - Debounced
   useEffect(() => {
     if (!preFetchUrl || preFetchUrl === currentActiveUrl) return;
 
-    // Neural delay: Only warm up if user dwells on the channel for 2 seconds
     const timer = setTimeout(() => {
       if (Hls.isSupported()) {
         if (preFetchHlsRef.current) {
@@ -49,10 +151,10 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
           preFetchHlsRef.current = preHls;
           console.log("Neural Warm-up FINALIZED for:", preFetchUrl);
         } catch (e) {
-          // ignore pre-render issues
+          // ignore issues
         }
       }
-    }, 2000); // 2s Dwell time required
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, [preFetchUrl, currentActiveUrl]);
@@ -71,7 +173,17 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       setPlayerError("Media stream format issue or browser sandbox blocking stream.");
     };
 
+    const handleLoadedMetadata = () => {
+      if (isVaultSubActive && vaultMatch) {
+         // Loop safely within 10 minutes limit (Sintel full-length) to prevent crashes on out-of-bounds seeks
+         const seekPos = Math.floor(vaultMatch.offsetSeconds % 600);
+         video.currentTime = seekPos;
+         console.log("Vault Sub-In Native Seek Triggered:", seekPos);
+      }
+    };
+
     video.addEventListener('error', handleNativeError);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
 
     if (Hls.isSupported()) {
       if (hlsRef.current) {
@@ -90,12 +202,16 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       hlsRef.current = hlsInstance;
 
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (isVaultSubActive && vaultMatch) {
+          const seekPos = Math.floor(vaultMatch.offsetSeconds % 600);
+          video.currentTime = seekPos;
+          console.log("Vault Sub-In Hls.js Seek Triggered:", seekPos);
+        }
         video.play().catch((playErr) => {
           console.log("Autoplay paused by standard browser policy:", playErr.message);
         });
       });
 
-      // Catch high-frequency stream & CORS connection errors
       hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           console.warn("Fatal HLS playback block:", data.type, "Details:", data.details);
@@ -116,9 +232,11 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Direct load for Safari/iOS
       video.src = currentActiveUrl;
-      video.addEventListener('loadedmetadata', () => {
+      video.addEventListener('canplay', () => {
+        if (isVaultSubActive && vaultMatch) {
+          video.currentTime = Math.floor(vaultMatch.offsetSeconds % 600);
+        }
         video.play().catch(() => {});
       });
     } else {
@@ -127,11 +245,12 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
 
     return () => {
       video.removeEventListener('error', handleNativeError);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       if (hlsInstance) {
         hlsInstance.destroy();
       }
     };
-  }, [currentActiveUrl]);
+  }, [currentActiveUrl, isVaultSubActive]);
 
   // Ambient Lighting color glow sampler
   useEffect(() => {
@@ -158,22 +277,30 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
           setAmbientColor(`rgba(${r}, ${g}, ${b}, 0.25)`);
         });
       } catch (e) {
-        // Cross Origin (CORS) blocks drawing of some external m3u feeds
+        // CORS block
       }
 
-      timeoutId = setTimeout(updateAmbientColor, 2000); // 2s sample rate matches smart TV processors
+      timeoutId = setTimeout(updateAmbientColor, 2000);
     };
 
     updateAmbientColor();
     return () => clearTimeout(timeoutId);
   }, []);
 
-  // Set guaranteed back up stream (Sintel HLS)
   const handlePlayFallback = () => {
-    const fallbackStream = DEMO_LIVE_CHANNELS[0].url; // Sintel Cinema Stable URL
-    setCurrentActiveUrl(fallbackStream);
+    const fallbackStream = DEMO_LIVE_CHANNELS[0].url;
+    setForcedFallbackUrl(fallbackStream);
     setPlayerError(null);
     setIsUsingFallback(true);
+    setUserBypassedVault(true); // Disable vault matching when they force standard fallback
+  };
+
+  const handleBypassSub = () => {
+    setUserBypassedVault(true);
+  };
+
+  const handleReEngageSub = () => {
+    setUserBypassedVault(false);
   };
 
   return (
@@ -192,8 +319,92 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
         controls
       />
 
-      {/* Hidden canvas for color sampling */}
       <canvas ref={canvasRef} width="1" height="1" className="hidden" />
+
+      {/* Vault Sub-In HUD Overlays */}
+      <AnimatePresence>
+        {isVaultSubActive && vaultMatch && (
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 15 }}
+            className="absolute bottom-4 left-4 right-4 sm:right-auto sm:max-w-md z-30 bg-black/85 backdrop-blur-md rounded-2xl border border-afterglow-primary/40 p-4 shadow-2xl flex flex-col gap-3 text-left animate-fade-in"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-afterglow-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-afterglow-primary"></span>
+                </span>
+                <span className="font-mono text-[9px] font-black text-afterglow-primary tracking-widest uppercase flex items-center gap-1.5">
+                  <Database className="w-3 h-3" /> VAULT SUB-IN ACTIVE
+                </span>
+              </div>
+              <span className="text-[8px] font-mono text-white/30 uppercase tracking-widest bg-white/5 border border-white/5 px-2 py-0.5 rounded-full">
+                1080p Local Source
+              </span>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold text-white/95 truncate">
+                {vaultMatch.item.displayTitle}
+              </h4>
+              <p className="text-[10px] font-mono text-white/45 mt-1 leading-snug">
+                This broadcast matches your high-quality local copy. Playback has been seamlessly synchronized with the current schedule.
+              </p>
+            </div>
+
+            <div className="bg-white/5 rounded-xl px-3 py-2 flex items-center justify-between gap-4">
+              <div className="flex flex-col">
+                <span className="text-[8px] font-mono text-white/45 uppercase tracking-widest">EPG broadcast slot</span>
+                <span className="text-[10px] font-mono font-bold text-white/80">
+                  {vaultMatch.program.title}
+                </span>
+              </div>
+              <div className="flex flex-col text-right">
+                <span className="text-[8px] font-mono text-white/45 uppercase tracking-widest">Tune sync offset</span>
+                <span className="text-[10px] font-mono font-bold text-afterglow-primary font-black">
+                  +{Math.floor(vaultMatch.offsetSeconds / 60)}m {Math.floor(vaultMatch.offsetSeconds % 60)}s
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-1">
+              <Focusable
+                id="btn-player-bypass-sub"
+                className="flex-grow py-2 px-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 font-mono text-[9px] tracking-wider text-white/70 hover:text-white transition-all text-center"
+                onEnter={handleBypassSub}
+              >
+                ⚡ BYPASS SUB-IN (IPTV LIVE)
+              </Focusable>
+              
+              <div className="px-2.5 bg-afterglow-primary/10 border border-afterglow-primary/20 rounded-lg flex items-center justify-center shrink-0">
+                <Cpu className="w-3 h-3 text-afterglow-primary animate-pulse" />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Floating Indicator when user manually bypassed, allowing them to re-engage the sub-in */}
+        {!isVaultSubActive && vaultMatch && userBypassedVault && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="absolute top-4 right-4 z-30"
+          >
+            <Focusable
+              id="btn-player-reengage-sub"
+              className="flex items-center gap-2 bg-afterglow-primary/20 border border-afterglow-primary/40 hover:bg-afterglow-primary backdrop-blur-md px-3 py-1.5 rounded-full text-[9px] font-mono text-white font-bold tracking-widest uppercase transition-all shadow-glow cursor-pointer whitespace-nowrap"
+              onEnter={handleReEngageSub}
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>VAULT COPY AVAILABLE</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </Focusable>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Error / CORS Sandbox Warning Overlay */}
       {playerError && (
@@ -229,8 +440,9 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       </div>
 
       <div className="absolute bottom-4 right-4 z-20 flex gap-2 pointer-events-none">
-        <div className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/5 text-[9px] font-mono tracking-widest text-white/40 uppercase">
-          GLOW_DECODER {hlsRef.current ? 'HLS.Active' : 'HTML5.Native'}
+        <div className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/5 text-[9px] font-mono tracking-widest text-white/40 uppercase flex items-center gap-1.5 font-mono">
+          <Sparkles className="w-3 h-3 text-afterglow-primary" />
+          <span>GLOW_DECODER {hlsRef.current ? 'HLS.Active' : 'HTML5.Native'}</span>
         </div>
       </div>
     </div>

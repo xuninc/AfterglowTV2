@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { HelpCircle, Layers, Radio, Sparkles, Filter } from 'lucide-react';
 import { Focusable } from '../common/Focusable';
 import { useStore } from '../../store/useStore';
+import { generateMockProgramsForChannel } from '../../utils/epgGenerator';
 
 interface EPGProgram {
   start: Date;
@@ -20,6 +21,14 @@ export const GuideGrid: React.FC = () => {
   const setCurrentChannel = useStore(state => state.setCurrentChannel);
   const setPreFetchUrl = useStore(state => state.setPreFetchUrl);
   const epgData = useStore(state => state.epgData);
+
+  // EPG Vault Injector Reactive Hook Bindings
+  const isEpgInjectEnabled = useStore(state => state.isEpgInjectEnabled);
+  const epgInjectMode = useStore(state => state.epgInjectMode);
+  const epgInjectChannels = useStore(state => state.epgInjectChannels);
+  const epgInjectSlots = useStore(state => state.epgInjectSlots);
+  const epgInjectAlgoDensity = useStore(state => state.epgInjectAlgoDensity);
+  const mediaLibrary = useStore(state => state.mediaLibrary);
 
   const playlist = useMemo(() => playlists.find(p => p.id === currentPlaylistId), [playlists, currentPlaylistId]);
   
@@ -61,11 +70,68 @@ export const GuideGrid: React.FC = () => {
 
   const getProgramsForChannel = (tvgId: string | undefined) => {
     if (!tvgId) return [];
-    return (epgData[tvgId] || []).map(p => ({
-        ...p,
-        start: new Date(p.start), // Ensure Date objects
-        end: new Date(p.end)
-    }));
+    
+    let programs: any[] = [];
+    const stored = epgData[tvgId];
+    if (stored && stored.length > 0) {
+      programs = stored.map(p => ({
+          ...p,
+          start: new Date(p.start), // Ensure Date objects
+          end: new Date(p.end)
+      }));
+    } else {
+      // Automatically generate nice deterministic schedules for active channels!
+      programs = generateMockProgramsForChannel(
+        tvgId, 
+        new Date(),
+        isEpgInjectEnabled,
+        epgInjectMode,
+        epgInjectChannels,
+        epgInjectSlots,
+        epgInjectAlgoDensity,
+        mediaLibrary
+      );
+    }
+
+    // Apply EPG substitution logic to imported guide data if any
+    if (stored && stored.length > 0 && isEpgInjectEnabled && mediaLibrary && mediaLibrary.length > 0) {
+      const isChannelAllowed = !epgInjectChannels || epgInjectChannels.length === 0 || epgInjectChannels.includes(tvgId);
+      if (isChannelAllowed) {
+        programs = programs.map(p => {
+          let title = p.title;
+          let description = p.description;
+          let isInjected = false;
+
+          if (epgInjectMode === 'manual' && epgInjectSlots && epgInjectSlots.length > 0) {
+            const slotHour = p.start.getHours();
+            const matchedSlot = epgInjectSlots.find(slot => slot.channelId === tvgId && slot.hour === slotHour);
+            if (matchedSlot) {
+              title = `${matchedSlot.mediaTitle}`;
+              description = `[Vault Special Selection] This program slot is overridden with your custom media file. Enjoy uninterrupted playback of your personal Vault library directly through IPTV.`;
+              isInjected = true;
+            }
+          } else if (epgInjectMode === 'algorithmic') {
+            const density = epgInjectAlgoDensity ?? 30;
+            const hashInput = `${tvgId}-${p.start.getFullYear()}-${p.start.getMonth()}-${p.start.getDate()}-${p.start.getHours()}`;
+            let hash = 0;
+            for (let k = 0; k < hashInput.length; k++) {
+              hash = (hash * 31 + hashInput.charCodeAt(k)) % 10000;
+            }
+            if ((hash % 100) < density) {
+              const vaultIndex = hash % mediaLibrary.length;
+              const chosenItem = mediaLibrary[vaultIndex];
+              title = `${chosenItem.displayTitle}`;
+              description = `[Vault Auto-Substitute] Autopilot selected this slot on ${tvgId} to broadcast "${chosenItem.displayTitle}" from your connected media storage. Fully synchronized starting from the schedule offset.`;
+              isInjected = true;
+            }
+          }
+
+          return { ...p, title, description, isInjectedVaultMedia: isInjected };
+        });
+      }
+    }
+
+    return programs;
   };
 
   return (
@@ -181,9 +247,16 @@ export const GuideGrid: React.FC = () => {
                                 className="h-full border-r border-white/5 p-3 flex flex-col justify-center overflow-hidden"
                                 style={{ width: HOUR_WIDTH }}
                             >
-                                <span className="text-xs font-semibold text-white/80 line-clamp-1">
-                                    {currentProgram?.title || "Program Schedule Broadcast..."}
-                                </span>
+                                <div className="flex items-center gap-1.5 min-w-0 w-full mb-0.5">
+                                    <span className="text-xs font-semibold text-white/80 truncate flex-grow">
+                                        {currentProgram?.title || "Program Schedule Broadcast..."}
+                                    </span>
+                                    {currentProgram?.isInjectedVaultMedia && (
+                                        <span className="shrink-0 bg-indigo-500/20 border border-indigo-500/40 px-1 py-0.5 rounded text-[7px] font-mono text-indigo-300 font-black tracking-widest uppercase label-badge scale-95 origin-right">
+                                            VAULT INJECT
+                                        </span>
+                                    )}
+                                </div>
                                 <span className="text-[10px] text-white/45 font-mono">
                                     {currentProgram 
                                         ? `${format(currentProgram.start, 'HH:mm')} - ${format(currentProgram.end, 'HH:mm')}`

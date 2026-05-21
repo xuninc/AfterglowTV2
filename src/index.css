@@ -6,19 +6,22 @@
   --font-display: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  --color-afterglow-primary: #ff3e00;
-  --color-afterglow-secondary: #ff8a00;
-  --color-afterglow-accent: #00d4ff;
-  --color-afterglow-bg: #050505;
-  --color-afterglow-card: #121212;
+  --color-afterglow-primary: var(--afterglow-primary, #ff3e00);
+  --color-afterglow-secondary: var(--afterglow-secondary, #ff8a00);
+  --color-afterglow-accent: var(--afterglow-accent, #00d4ff);
+  --color-afterglow-bg: var(--afterglow-bg, #050505);
+  --color-afterglow-card: var(--afterglow-card, #121212);
+  --color-afterglow-text: var(--afterglow-text, #ffffff);
+  --color-afterglow-text-muted: var(--afterglow-text-muted, rgba(255, 255, 255, 0.4));
+  --color-afterglow-border: var(--afterglow-border, rgba(255, 255, 255, 0.05));
   
-  --shadow-glow: 0 0 20px rgba(255, 62, 0, 0.3);
-  --shadow-active-glow: 0 0 40px rgba(255, 62, 0, 0.6);
+  --shadow-glow: 0 0 20px var(--afterglow-glow-color, rgba(255, 62, 0, 0.3));
+  --shadow-active-glow: 0 0 40px var(--afterglow-glow-active, rgba(255, 62, 0, 0.6));
 }
 
 @layer base {
   body {
-    @apply bg-afterglow-bg text-white font-sans overflow-hidden;
+    @apply bg-afterglow-bg text-afterglow-text font-sans overflow-hidden transition-colors duration-500;
   }
 
   /* Custom Scrollbar for TV (often hidden or minimal) */
@@ -55,3 +58,135 @@
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* Light Theme Enhancements & Global Color Overrides */
+.theme-light {
+  color-scheme: light;
+}
+
+.theme-light .text-white {
+  color: var(--afterglow-text) !important;
+}
+
+.theme-light .text-white\/95 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.95;
+}
+
+.theme-light .text-white\/80 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.8;
+}
+
+.theme-light .text-white\/60 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.6;
+}
+
+.theme-light .text-white\/50 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.5;
+}
+
+.theme-light .text-white\/45 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.45;
+}
+
+.theme-light .text-white\/40 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.4;
+}
+
+.theme-light .text-white\/35 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.35;
+}
+
+.theme-light .text-white\/30 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.3;
+}
+
+.theme-light .text-white\/20 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.2;
+}
+
+.theme-light .text-white\/15 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.15;
+}
+
+.theme-light .text-white\/10 {
+  color: var(--afterglow-text) !important;
+  opacity: 0.1;
+}
+
+.theme-light .border-white\/5 {
+  border-color: var(--afterglow-border) !important;
+}
+
+.theme-light .border-white\/10 {
+  border-color: var(--afterglow-border) !important;
+}
+
+.theme-light .border-white\/15 {
+  border-color: var(--afterglow-border) !important;
+}
+
+.theme-light .bg-white\/5 {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.theme-light .bg-white\/20 {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-light .bg-white\/25 {
+  background-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.theme-light .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light .hover\:bg-white\/10:hover {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.theme-light .bg-black\/15 {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light .bg-black\/20 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .bg-black\/25 {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.theme-light .bg-afterglow-card\/90 {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+}
+
+.theme-light .bg-afterglow-card\/40 {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Ensure icons, toggles, borders look beautiful in Light Presets */
+.theme-light input[type="text"], 
+.theme-light select {
+  background-color: #ffffff !important;
+  color: var(--afterglow-text) !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+.theme-light input[type="text"]:focus, 
+.theme-light select:focus {
+  border-color: var(--afterglow-primary) !important;
+}

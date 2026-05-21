@@ -3,6 +3,7 @@ import axios from 'axios';
 import { motion } from 'motion/react';
 import { Tv, KeyRound, Server, Play } from 'lucide-react';
 import { Focusable } from './common/Focusable';
+import { AfterglowLogo } from './common/AfterglowLogo';
 import { useStore } from '../store/useStore';
 import { parseEPG } from '../lib/epgParser';
 import { DEMO_PLAYLIST } from '../data/demoData';
@@ -156,8 +157,9 @@ export const SetupScreen: React.FC = () => {
         {/* Title */}
         <div className="flex flex-col gap-2 border-b border-white/5 pb-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-4xl font-display font-black tracking-tighter italic text-white flex items-center gap-3">
-              AFTERGLOW <span className="text-afterglow-primary">TV</span>
+            <h1 className="text-4xl font-display font-black tracking-tighter italic text-white flex items-center gap-3.5">
+              <AfterglowLogo size={42} showBg={true} animated={true} />
+              <span>AFTERGLOW <span className="text-afterglow-primary">TV</span></span>
             </h1>
             <div className="text-[10px] bg-white/5 border border-white/10 px-3 py-1 rounded-full font-mono text-white/40 tracking-[0.2em]">
               V1.4 RECEIVER

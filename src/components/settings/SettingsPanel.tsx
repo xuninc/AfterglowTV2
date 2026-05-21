@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard, Database, Tv, Sliders, Calendar } from 'lucide-react';
 import { Focusable } from '../common/Focusable';
 import { useStore } from '../../store/useStore';
 import axios from 'axios';
 import { parseEPG } from '../../lib/epgParser';
+import { THEME_PRESETS } from '../../utils/theme';
 
 export const SettingsPanel: React.FC = () => {
   const playlists = useStore(state => state.playlists);
@@ -17,9 +18,26 @@ export const SettingsPanel: React.FC = () => {
   const isTitleCleaningEnabled = useStore(state => state.isTitleCleaningEnabled);
   const isMarqueeEnabled = useStore(state => state.isMarqueeEnabled);
   const isBackgroundEnrichmentEnabled = useStore(state => state.isBackgroundEnrichmentEnabled);
+  const isVaultSubstitutionEnabled = useStore(state => state.isVaultSubstitutionEnabled);
   const setTitleCleaningEnabled = useStore(state => state.setTitleCleaningEnabled);
   const setMarqueeEnabled = useStore(state => state.setMarqueeEnabled);
   const setBackgroundEnrichmentEnabled = useStore(state => state.setBackgroundEnrichmentEnabled);
+  const setVaultSubstitutionEnabled = useStore(state => state.setVaultSubstitutionEnabled);
+
+  // EPG Vault Injector (Virtual Broadcaster) Hooks
+  const isEpgInjectEnabled = useStore(state => state.isEpgInjectEnabled);
+  const epgInjectMode = useStore(state => state.epgInjectMode);
+  const epgInjectChannels = useStore(state => state.epgInjectChannels);
+  const epgInjectSlots = useStore(state => state.epgInjectSlots);
+  const epgInjectAlgoDensity = useStore(state => state.epgInjectAlgoDensity);
+  const mediaLibrary = useStore(state => state.mediaLibrary);
+  
+  const setEpgInjectEnabled = useStore(state => state.setEpgInjectEnabled);
+  const setEpgInjectMode = useStore(state => state.setEpgInjectMode);
+  const setEpgInjectChannels = useStore(state => state.setEpgInjectChannels);
+  const setEpgInjectAlgoDensity = useStore(state => state.setEpgInjectAlgoDensity);
+  const addEpgInjectSlot = useStore(state => state.addEpgInjectSlot);
+  const removeEpgInjectSlot = useStore(state => state.removeEpgInjectSlot);
 
   // Premium / Trial hooks
   const isPremium = useStore(state => state.isPremium);
@@ -28,10 +46,20 @@ export const SettingsPanel: React.FC = () => {
   const resetTrial = useStore(state => state.resetTrial);
   const setTrialStartDate = useStore(state => state.setTrialStartDate);
 
+  // Theme states
+  const activeThemeId = useStore(state => state.activeThemeId);
+  const setActiveThemeId = useStore(state => state.setActiveThemeId);
+
   // Quick state to add a simple M3U link in Settings
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [syncMsg, setSyncMsg] = useState('');
+
+  // Manual EPG custom slots form state
+  const [slotChannelId, setSlotChannelId] = useState('');
+  const [slotHour, setSlotHour] = useState(20); // default to prime time 8 PM
+  const [slotMediaTitle, setSlotMediaTitle] = useState('');
+  const [slotFormError, setSlotFormError] = useState('');
 
   // Counting total EPG caches
   const totalEpgCount = Object.keys(epgData).length;
@@ -272,7 +300,431 @@ export const SettingsPanel: React.FC = () => {
                 {isBackgroundEnrichmentEnabled ? 'ACTIVE / ON' : 'DISABLED / OFF'}
               </Focusable>
             </div>
+
+            {/* Toggle 4: Vault Sub-In Substitution Option */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-black/20 p-4 rounded-xl border border-white/5">
+              <div className="flex-grow">
+                <span className="text-xs font-semibold text-white/95 block">SMART VAULT MEDIA SUBSTITUTION (LOCAL SUB-IN)</span>
+                <span className="text-[10px] font-mono text-white/40 block mt-0.5">
+                  When enabled, if a live IPTV broadcast matches an episode or movie currently indexed in your local Afterglow Vault, the player will automatically sub-in your high-quality local copy starting exactly at the correct current broadcast time offset.
+                </span>
+              </div>
+              <Focusable
+                id="btn-toggle-vault-sub"
+                className={`px-4 py-2 rounded-lg font-mono text-[9px] font-bold tracking-widest transition-all select-none self-start sm:self-center shrink-0 ${
+                  isVaultSubstitutionEnabled 
+                    ? 'bg-indigo-600/20 border border-indigo-505/50 text-indigo-300' 
+                    : 'bg-white/5 border border-white/10 text-white/40'
+                }`}
+                onEnter={() => setVaultSubstitutionEnabled(!isVaultSubstitutionEnabled)}
+              >
+                {isVaultSubstitutionEnabled ? 'ACTIVE / ON' : 'DISABLED / OFF'}
+              </Focusable>
+            </div>
           </div>
+        </div>
+
+        {/* Theme customization configuration block */}
+        <div className="bg-afterglow-card/40 border border-afterglow-primary/20 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-40 bg-afterglow-primary/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div className="border-b border-white/5 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-mono text-white/95 tracking-widest uppercase flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-afterglow-primary animate-pulse" />
+                <span>RECEIVER INTERFACE THEME</span>
+              </h3>
+              <p className="text-[10px] text-white/40 font-mono mt-1 max-w-2xl leading-relaxed">
+                Repaint Afterglow's high-fidelity receiver aesthetic. Easily switch between neon retro palettes, modern high-contrast light environments, or ultra-dark obsidian layouts with persistent automatic synchronisation.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {THEME_PRESETS.map((preset) => {
+              const isActive = activeThemeId === preset.id;
+              return (
+                <Focusable
+                  key={preset.id}
+                  id={`btn-theme-select-${preset.id}`}
+                  className={`p-4 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-3 relative overflow-hidden select-none ${
+                    isActive 
+                      ? 'bg-afterglow-primary/10 border-afterglow-primary ring-2 ring-afterglow-primary/30 shadow-glow' 
+                      : 'bg-black/25 border-white/5 hover:border-white/15'
+                  }`}
+                  onEnter={() => setActiveThemeId(preset.id)}
+                >
+                  <div className="flex items-center justify-between z-10">
+                    <span className="text-xs font-bold font-display text-white/95">{preset.name}</span>
+                    <span className={`text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded ${
+                      preset.type === 'dark' 
+                        ? 'bg-zinc-800 text-zinc-300' 
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {preset.type}
+                    </span>
+                  </div>
+
+                  {/* Aesthetic visual swatch palette */}
+                  <div className="flex items-center gap-2 mt-1 z-10">
+                    <div className="flex -space-x-1.5 pointer-events-none">
+                      <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-sm animate-pulse-glow" style={{ backgroundColor: preset.colors.primary }} />
+                      <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: preset.colors.secondary }} />
+                      <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: preset.colors.accent }} />
+                      <span className="w-3.5 h-3.5 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: preset.colors.bg }} />
+                    </div>
+                    <span className="text-[9px] font-mono text-white/45 tracking-wider uppercase ml-1">
+                      {preset.type === 'dark' ? 'Absorbs Light' : 'Reflects Glow'}
+                    </span>
+                  </div>
+
+                  {/* Sparkle subtle highlight for active theme */}
+                  {isActive && (
+                    <div className="absolute bottom-2 right-2 w-4 h-4 bg-afterglow-primary/15 rounded-full flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-afterglow-primary animate-ping" />
+                    </div>
+                  )}
+                </Focusable>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* EPG Vault Injector (Virtual Broadcaster) configuration block */}
+        <div className="bg-afterglow-card/40 border border-afterglow-primary/20 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-40 bg-indigo-500/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+            <div>
+              <h3 className="text-sm font-mono text-white/95 tracking-widest uppercase flex items-center gap-2">
+                <Database className="w-4 h-4 text-indigo-400 animate-pulse" />
+                <span>EPG INTEGRATION: VIRTUAL BROADCASTER</span>
+              </h3>
+              <p className="text-[10px] text-white/40 font-mono mt-1 max-w-2xl leading-relaxed">
+                Silently inject your personal media library directly into the IPTV Player's Electronic Program Guide (EPG). Replace standard live schedules with your automated or custom slotted high-fidelity local content.
+              </p>
+            </div>
+            
+            <Focusable
+              id="btn-epg-inject-master"
+              className={`px-4 py-2 rounded-lg font-mono text-[9px] font-bold tracking-widest transition-all select-none self-start sm:self-center shrink-0 ${
+                isEpgInjectEnabled 
+                  ? 'bg-indigo-600/35 border border-indigo-500 text-indigo-200' 
+                  : 'bg-white/5 border border-white/10 text-white/40'
+              }`}
+              onEnter={() => setEpgInjectEnabled(!isEpgInjectEnabled)}
+            >
+              {isEpgInjectEnabled ? 'INJECTOR ACTIVE / ON' : 'SYSTEM OFF'}
+            </Focusable>
+          </div>
+
+          {isEpgInjectEnabled && (
+            <div className="flex flex-col gap-6 animate-fade-in text-left">
+              
+              {/* Injection mode selector */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div 
+                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none ${
+                    epgInjectMode === 'algorithmic' 
+                      ? 'bg-indigo-950/15 border-indigo-500/40' 
+                      : 'bg-white/5 border-white/5 hover:border-white/10'
+                  }`}
+                  onClick={() => setEpgInjectMode('algorithmic')}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Sliders className={`w-4 h-4 ${epgInjectMode === 'algorithmic' ? 'text-indigo-400' : 'text-white/45'}`} />
+                    <span className="text-xs font-semibold text-white/95 uppercase font-mono">AUTOPILOT INJECTION (Algorithmic)</span>
+                  </div>
+                  <p className="text-[10.5px] text-white/45 font-mono leading-relaxed">
+                    Let the app's advanced scheduling algorithm randomly and deterministically take over the slots on free-game channels based on files present inside your local folders database.
+                  </p>
+                </div>
+
+                <div 
+                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none ${
+                    epgInjectMode === 'manual' 
+                      ? 'bg-indigo-950/15 border-indigo-500/40' 
+                      : 'bg-white/5 border-white/5 hover:border-white/10'
+                  }`}
+                  onClick={() => setEpgInjectMode('manual')}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Calendar className={`w-4 h-4 ${epgInjectMode === 'manual' ? 'text-indigo-400' : 'text-white/45'}`} />
+                    <span className="text-xs font-semibold text-white/95 uppercase font-mono">CRON PLANNER (Fixed Slots)</span>
+                  </div>
+                  <p className="text-[10.5px] text-white/45 font-mono leading-relaxed">
+                    Reserve specific daily hours for specific Vault files to show up on designated IPTV channels. Build your own perfect custom live-television scheduling matrix.
+                  </p>
+                </div>
+              </div>
+
+              {/* Dynamic Sub-Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 border-t border-white/5 pt-5">
+                
+                {/* Available Channels target Selector (Free Game Channels) */}
+                <div className="lg:col-span-12 xl:col-span-5 flex flex-col gap-3">
+                  <div>
+                    <h4 className="text-[11px] font-mono font-bold tracking-wider text-white/80 uppercase">Free-Game Target Channels</h4>
+                    <p className="text-[9px] text-white/40 block mt-0.5 leading-snug">
+                      Toggle which live channels the system is permitted to take over schedules of.
+                    </p>
+                  </div>
+
+                  <div className="bg-black/20 rounded-xl p-3 border border-white/5 max-h-48 overflow-y-auto scrollbar-none flex flex-col gap-1.5 min-h-[140px]">
+                    {(() => {
+                      const playlist = playlists.find(p => p.id === currentPlaylistId);
+                      const live = playlist ? playlist.channels.filter(c => c.type !== 'vod') : [];
+                      
+                      const availableTargetChannels = live.length > 0 
+                        ? live.map(ch => ({ tvgId: ch.tvgId || ch.name, name: ch.name }))
+                        : [
+                            { tvgId: "sintel.live", name: "Sintel Cinema Live" },
+                            { tvgId: "bunny.live", name: "Big Buck Bunny Cartoon" },
+                            { tvgId: "tears.live", name: "Tears of Steel Sci-Fi Feed" },
+                            { tvgId: "nasa.hd", name: "NASA HD Public Broadcast" },
+                            { tvgId: "bipbop.live", name: "BipBop Decoder Calibrator" }
+                          ];
+
+                      return availableTargetChannels.map((ch, idx) => {
+                        const isChecked = epgInjectChannels.includes(ch.tvgId);
+                        return (
+                          <Focusable
+                            key={idx}
+                            id={`btn-toggle-channel-inject-${idx}`}
+                            className={`flex items-center justify-between p-2 rounded-lg border text-left cursor-pointer transition-colors ${
+                              isChecked 
+                                ? 'bg-indigo-950/10 border-indigo-500/25 text-indigo-300' 
+                                : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/60'
+                            }`}
+                            onEnter={() => {
+                              if (isChecked) {
+                                setEpgInjectChannels(epgInjectChannels.filter(id => id !== ch.tvgId));
+                              } else {
+                                setEpgInjectChannels([...epgInjectChannels, ch.tvgId]);
+                              }
+                            }}
+                          >
+                            <span className="text-[10px] truncate max-w-[200px]" title={ch.name}>
+                              {ch.name}
+                            </span>
+                            <span className="text-[8px] font-mono tracking-widest px-1.5 py-0.5 rounded uppercase font-black">
+                              {isChecked ? 'FREE GAME' : 'BLOCK OUT'}
+                            </span>
+                          </Focusable>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <span className="text-[9px] font-mono text-white/30 italic">
+                    * If zero channels are highlighted, all listings will fall back to free-game open targets.
+                  </span>
+                </div>
+
+                {/* Autopilot Density Configuration or Manual Slots Loader */}
+                <div className="lg:col-span-12 xl:col-span-7 flex flex-col gap-4 border-l border-white/5 pl-0 lg:pl-6">
+                  {epgInjectMode === 'algorithmic' ? (
+                    <div className="flex flex-col gap-4 text-left">
+                      <div>
+                        <h4 className="text-[11px] font-mono font-bold tracking-wider text-white/80 uppercase">Injection Frequency (Density)</h4>
+                        <p className="text-[9px] text-white/40 block mt-0.5 leading-snug">
+                          Set the percentage probability for any live EPG show slot to get automatically populated with high quality products from your personal library.
+                        </p>
+                      </div>
+
+                      <div className="bg-black/25 rounded-2xl p-5 border border-white/5 flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono text-white/50">AUTOPILOT RATIO</span>
+                          <span className="text-base font-bold font-mono text-afterglow-primary">
+                            {epgInjectAlgoDensity}% <span className="text-[9px] font-normal text-white/30 text-right">of EPG slots</span>
+                          </span>
+                        </div>
+
+                        <input 
+                          type="range"
+                          min="10"
+                          max="90"
+                          step="10"
+                          className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-indigo-500 animate-pulse"
+                          value={epgInjectAlgoDensity}
+                          onChange={(e) => setEpgInjectAlgoDensity(parseInt(e.target.value))}
+                        />
+
+                        <div className="grid grid-cols-4 text-center text-[9px] font-mono text-white/30">
+                          <span>10% (Chilled)</span>
+                          <span>30% (Standard)</span>
+                          <span>60% (Broadcaster)</span>
+                          <span>90% (Takeover)</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/5 p-4 rounded-xl flex items-start gap-3">
+                        <Sparkles className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] font-bold text-white/90 uppercase font-mono block">Dynamic Rotation Stable Engine</span>
+                          <span className="text-[9.5px] font-mono text-white/45 mt-0.5 leading-snug block">
+                            Our system generates stable, continuous virtual live feeds using high-performance deterministic offsets. When watching, standard live feeds silently loop local high definition releases, matching user watch-hours like standard TV.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4 text-left">
+                      <div>
+                        <h4 className="text-[11px] font-mono font-bold tracking-wider text-white/80 uppercase">Hourly Planner Matrix</h4>
+                        <p className="text-[9px] text-white/40 block mt-0.5 leading-snug">
+                          Instruct the guide decoder to replace any program at a exact hour with a selected release from your system holdings.
+                        </p>
+                      </div>
+
+                      {/* Manual Slot Adder Container */}
+                      <div className="bg-black/25 rounded-xl p-4 border border-white/5 flex flex-col gap-3">
+                        <span className="text-[9px] font-mono font-bold text-white/55 tracking-wider uppercase">Allocate Target Hour & Media file</span>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          {/* Channel select */}
+                          <div className="flex flex-col gap-1 text-left">
+                            <label className="text-[8px] font-mono text-white/40 uppercase">Channel</label>
+                            <select
+                              value={slotChannelId}
+                              onChange={(e) => {
+                                setSlotChannelId(e.target.value);
+                                setSlotFormError('');
+                              }}
+                              className="bg-zinc-900 border border-white/15 rounded px-2.5 py-1.5 text-[9.5px] font-mono text-white/80 focus:border-indigo-500 focus:outline-none"
+                            >
+                              <option value="">Select Target...</option>
+                              {(() => {
+                                const playlist = playlists.find(p => p.id === currentPlaylistId);
+                                const live = playlist ? playlist.channels.filter(c => c.type !== 'vod') : [];
+                                const list = live.length > 0 
+                                  ? live.map(ch => ({ tvgId: ch.tvgId || ch.name, name: ch.name }))
+                                  : [
+                                      { tvgId: "sintel.live", name: "Sintel Cinema Live" },
+                                      { tvgId: "bunny.live", name: "Big Buck Bunny Cartoon" },
+                                      { tvgId: "tears.live", name: "Tears of Steel Sci-Fi Feed" },
+                                      { tvgId: "nasa.hd", name: "NASA HD Public Broadcast" },
+                                      { tvgId: "bipbop.live", name: "BipBop Decoder Calibrator" }
+                                    ];
+                                return list.map(c => (
+                                  <option key={c.tvgId} value={c.tvgId}>{c.name}</option>
+                                ));
+                              })()}
+                            </select>
+                          </div>
+
+                          {/* Hour select */}
+                          <div className="flex flex-col gap-1 text-left">
+                            <label className="text-[8px] font-mono text-white/40 uppercase">Broadcast Hour</label>
+                            <select
+                              value={slotHour}
+                              onChange={(e) => {
+                                setSlotHour(parseInt(e.target.value));
+                                setSlotFormError('');
+                              }}
+                              className="bg-zinc-900 border border-white/15 rounded px-2.5 py-1.5 text-[9.5px] font-mono text-white/80 focus:border-indigo-500 focus:outline-none"
+                            >
+                              {Array.from({ length: 24 }, (_, i) => (
+                                <option key={i} value={i}>
+                                  {`${i === 0 ? 12 : i > 12 ? i - 12 : i} ${i >= 12 ? 'PM' : 'AM'} (${String(i).padStart(2, '0')}:00)`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Media select */}
+                          <div className="flex flex-col gap-1 text-left">
+                            <label className="text-[8px] font-mono text-white/40 uppercase">Vault Content</label>
+                            <select
+                              value={slotMediaTitle}
+                              onChange={(e) => {
+                                setSlotMediaTitle(e.target.value);
+                                setSlotFormError('');
+                              }}
+                              className="bg-zinc-900 border border-white/15 rounded px-2.5 py-1.5 text-[9.5px] font-mono text-white/80 focus:border-indigo-500 focus:outline-none"
+                            >
+                              <option value="">Select Video...</option>
+                              {mediaLibrary.length > 0 ? (
+                                mediaLibrary.map((item, idx) => (
+                                  <option key={idx} value={item.displayTitle}>{item.displayTitle}</option>
+                                ))
+                              ) : (
+                                <option value="Sintel (Standard Open High Definition Edition)">Sintel (Standard Fallback)</option>
+                              )}
+                            </select>
+                          </div>
+                        </div>
+
+                        {slotFormError && (
+                          <div className="text-[9px] font-mono text-rose-400 mt-1 flex items-center gap-1.5 text-left bg-rose-500/10 p-2 rounded border border-rose-500/20">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>{slotFormError}</span>
+                          </div>
+                        )}
+
+                        <Focusable
+                          id="btn-epg-add-manual-slot"
+                          className="afterglow-gradient block w-full py-2 rounded-lg font-mono text-[9px] font-black uppercase text-white tracking-widest shadow-glow mt-1 text-center"
+                          onEnter={() => {
+                            // Local manual submit flow
+                            if (!slotChannelId) {
+                              setSlotFormError('Choose channel first.');
+                              return;
+                            }
+                            const finalSelectedTitle = slotMediaTitle || "Sintel (Standard Open High Definition Edition)";
+                            const duplicate = epgInjectSlots.some(s => s.channelId === slotChannelId && s.hour === slotHour);
+                            if (duplicate) {
+                              setSlotFormError('A custom override already exists for this channel and hour.');
+                              return;
+                            }
+                            addEpgInjectSlot({
+                              id: `slot-${crypto.randomUUID()}`,
+                              channelId: slotChannelId,
+                              hour: slotHour,
+                              mediaTitle: finalSelectedTitle
+                            });
+                          }}
+                        >
+                          COMMENCE SLOT INJECTION
+                        </Focusable>
+                      </div>
+
+                      {/* Display existing custom slot rules */}
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[9px] font-mono font-bold text-white/55 tracking-wider uppercase">Active Injected Channels Grid</span>
+                        <div className="flex flex-col gap-2 max-h-36 overflow-y-auto scrollbar-none min-h-[80px]">
+                          {epgInjectSlots.length > 0 ? (
+                            epgInjectSlots.map((slot) => (
+                              <div key={slot.id} className="flex items-center justify-between bg-black/15 border border-white/5 rounded-lg px-3 py-2 text-left">
+                                <div className="flex flex-col">
+                                  <span className="text-[10.5px] font-bold text-white/90">
+                                    {slot.mediaTitle}
+                                  </span>
+                                  <span className="text-[8.5px] font-mono text-white/30 uppercase tracking-wider">
+                                    channel: {slot.channelId} &bull; starting at {`${slot.hour === 0 ? 12 : slot.hour > 12 ? slot.hour - 12 : slot.hour} ${slot.hour >= 12 ? 'PM' : 'AM'}`}
+                                  </span>
+                                </div>
+                                <Focusable
+                                  id={`btn-remove-slot-${slot.id}`}
+                                  className="p-1 px-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-rose-300 font-mono text-[8px] uppercase font-bold text-center cursor-pointer"
+                                  onEnter={() => removeEpgInjectSlot(slot.id)}
+                                >
+                                  REMOVE
+                                </Focusable>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="h-16 flex items-center justify-center border border-dashed border-white/5 rounded-xl bg-white/[0.01]">
+                              <span className="text-[10px] font-mono text-white/35 text-center px-4 w-full">No custom slot reservations saved. Set values above to start.</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Status System / diagnostics & EPG Sync */}
