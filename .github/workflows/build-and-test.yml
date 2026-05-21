@@ -76,6 +76,11 @@ jobs:
       - name: Sync Web Assets to Android Shell
         run: npx cap sync
 
+      - name: Regenerate Pristine Gradle Wrapper
+        run: |
+          cd android
+          gradle wrapper
+
       - name: Compile Android Debug APK with Gradle
         run: |
           cd android
