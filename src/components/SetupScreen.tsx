@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { motion } from 'motion/react';
 import { Tv, KeyRound, Server, Play } from 'lucide-react';
+import parser from 'iptv-playlist-parser';
 import { Focusable } from './common/Focusable';
 import { AfterglowLogo } from './common/AfterglowLogo';
 import { useStore } from '../store/useStore';
@@ -14,8 +15,14 @@ export const SetupScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SelectionTab>('m3u');
   
   // Form State: M3U
+  const [m3uSourceType, setM3uSourceType] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
   const [epgUrl, setEpgUrl] = useState('');
+  
+  // Local File States
+  const [localFile, setLocalFile] = useState<File | null>(null);
+  const [localFileContent, setLocalFileContent] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   // Form State: Xtream
   const [xtreamHost, setXtreamHost] = useState('');
@@ -59,26 +66,157 @@ export const SetupScreen: React.FC = () => {
     });
   };
 
+  // Robust line-by-line fallback parser matching server.ts
+  const parseM3UClientSide = (m3uText: string): any => {
+    try {
+      const result = parser.parse(m3uText);
+      if (result && result.items && result.items.length > 0) {
+        return result;
+      }
+    } catch (err) {
+      console.warn("Client parser.parse failed, falling back:", err);
+    }
+
+    const items: any[] = [];
+    const lines = m3uText.split(/\r?\n/);
+    let currentItem: any = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      if (line.toUpperCase().startsWith("#EXTINF:")) {
+        currentItem = {
+          name: "Unknown Channel",
+          tvg: { id: "", name: "", logo: "", url: "" },
+          group: { title: "General" },
+          url: ""
+        };
+
+        // Extract tvg-id
+        const tvgIdMatch = line.match(/tvg-id="([^"]*)"/i) || line.match(/tvg-id=([^,\s]+)/i);
+        if (tvgIdMatch) currentItem.tvg.id = tvgIdMatch[1];
+
+        // Extract tvg-logo
+        const logoMatch = line.match(/tvg-logo="([^"]*)"/i) || line.match(/tvg-logo=([^,\s]+)/i);
+        if (logoMatch) currentItem.tvg.logo = logoMatch[1];
+
+        // Extract group-title
+        const groupMatch = line.match(/group-title="([^"]*)"/i) || line.match(/group-title=([^,\s]+)/i);
+        if (groupMatch) currentItem.group.title = groupMatch[1];
+
+        // Extract name (last comma to end of line)
+        const commaIndex = line.lastIndexOf(",");
+        if (commaIndex !== -1) {
+          currentItem.name = line.substring(commaIndex + 1).trim();
+        }
+      } else if (line.startsWith("#")) {
+        // Skip comment lines or other unparsed tag types
+      } else if (line.startsWith("http://") || line.startsWith("https://") || line.includes("://") || line.endsWith(".m3u8") || line.endsWith(".ts")) {
+        if (currentItem) {
+          currentItem.url = line;
+          items.push(currentItem);
+          currentItem = null;
+        } else {
+          // Plain URL link directly
+          const urlParts = line.split("/");
+          const lastPart = urlParts[urlParts.length - 1] || "Channel";
+          items.push({
+            name: lastPart.replace(/\.[^/.]+$/, ""),
+            tvg: { id: "", name: "", logo: "", url: "" },
+            group: { title: "General" },
+            url: line
+          });
+        }
+      }
+    }
+
+    return { header: {}, items };
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processLocalFile(file);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processLocalFile(file);
+    }
+  };
+
+  const processLocalFile = (file: File) => {
+    if (!file.name.endsWith('.m3u') && !file.name.endsWith('.m3u8')) {
+      setError("Please supply a valid M3U or M3U8 IPTV playlist file.");
+      return;
+    }
+    setLocalFile(file);
+    setError(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setLocalFileContent(text);
+    };
+    reader.onerror = () => {
+      setError("Failed reading the local playlist file.");
+    };
+    reader.readAsText(file);
+  };
+
   const handleFetch = async () => {
     setLoading(true);
     setError(null);
     try {
       if (activeTab === 'm3u') {
-        if (!url) {
-          setError("Playlist URL is required.");
-          setLoading(false);
-          return;
-        }
-        const response = await axios.get(`/api/playlist?url=${encodeURIComponent(url)}`);
-        registerPlaylist(response.data, "Glow M3U Broadcast", url, epgUrl);
+        if (m3uSourceType === 'file') {
+          if (!localFileContent) {
+            setError("Please select or drop an M3U playlist file first.");
+            setLoading(false);
+            return;
+          }
+          const parsedData = parseM3UClientSide(localFileContent);
+          registerPlaylist(parsedData, localFile?.name || "Local File Playlist", "local-file", epgUrl);
+          
+          if (epgUrl) {
+            axios.get(`/api/epg?url=${encodeURIComponent(epgUrl)}`)
+              .then(res => {
+                const parsed = parseEPG(res.data);
+                useStore.getState().setEpgData(parsed);
+              })
+              .catch(e => console.error("EPG Sync Failed (Non-blocking):", e));
+          }
+        } else {
+          if (!url) {
+            setError("Playlist URL is required.");
+            setLoading(false);
+            return;
+          }
+          const response = await axios.get(`/api/playlist?url=${encodeURIComponent(url)}`);
+          registerPlaylist(response.data, "Glow M3U Broadcast", url, epgUrl);
 
-        if (epgUrl) {
-          axios.get(`/api/epg?url=${encodeURIComponent(epgUrl)}`)
-            .then(res => {
-              const parsed = parseEPG(res.data);
-              useStore.getState().setEpgData(parsed);
-            })
-            .catch(e => console.error("EPG Sync Failed (Non-blocking):", e));
+          if (epgUrl) {
+            axios.get(`/api/epg?url=${encodeURIComponent(epgUrl)}`)
+              .then(res => {
+                const parsed = parseEPG(res.data);
+                useStore.getState().setEpgData(parsed);
+              })
+              .catch(e => console.error("EPG Sync Failed (Non-blocking):", e));
+          }
         }
       } 
       else if (activeTab === 'xtream') {
@@ -210,20 +348,105 @@ export const SetupScreen: React.FC = () => {
         <div className="flex flex-col gap-6">
           {activeTab === 'm3u' && (
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-mono text-white/40 uppercase tracking-widest pl-1">Playlist URL</label>
-                <Focusable id="input-m3u-playlist" className="w-full">
-                  <input 
-                    type="text"
-                    placeholder="http://example.com/playlist.m3u"
-                    className="w-full bg-black/40 border border-white/5 rounded-xl p-4 text-base font-light text-white placeholder:text-white/20 focus:outline-none focus:border-afterglow-primary transition-all duration-300"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    onFocus={() => useStore.getState().setFocusedElement('input-m3u-playlist')}
-                    onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-                  />
-                </Focusable>
+              {/* Remote URL vs Local File Source Type Selector */}
+              <div className="flex gap-2 p-1 bg-black/40 border border-white/5 rounded-xl max-w-xs self-start">
+                <button
+                  type="button"
+                  onClick={() => setM3uSourceType('url')}
+                  className={`py-1.5 px-3.5 rounded-lg text-[10px] font-mono tracking-widest font-semibold transition-all cursor-pointer ${
+                    m3uSourceType === 'url' ? 'bg-white/10 text-afterglow-primary shadow-sm' : 'text-white/40 hover:text-white/80'
+                  }`}
+                >
+                  REMOTE LINK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setM3uSourceType('file')}
+                  className={`py-1.5 px-3.5 rounded-lg text-[10px] font-mono tracking-widest font-semibold transition-all cursor-pointer ${
+                    m3uSourceType === 'file' ? 'bg-white/10 text-afterglow-primary shadow-sm' : 'text-white/40 hover:text-white/80'
+                  }`}
+                >
+                  LOCAL .M3U FILE
+                </button>
               </div>
+
+              {m3uSourceType === 'url' ? (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-mono text-white/40 uppercase tracking-widest pl-1">Playlist URL</label>
+                  <Focusable id="input-m3u-playlist" className="w-full">
+                    <input 
+                      type="text"
+                      placeholder="http://example.com/playlist.m3u"
+                      className="w-full bg-black/40 border border-white/5 rounded-xl p-4 text-base font-light text-white placeholder:text-white/20 focus:outline-none focus:border-afterglow-primary transition-all duration-300"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      onFocus={() => useStore.getState().setFocusedElement('input-m3u-playlist')}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
+                    />
+                  </Focusable>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-mono text-white/40 uppercase tracking-widest pl-1">
+                    M3U FILE IMPORT
+                  </label>
+                  <Focusable id="local-m3u-dropzone" className="w-full">
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`border border-dashed rounded-xl p-8 text-center flex flex-col items-center justify-center gap-3 select-none active:scale-98 transition-all duration-300 cursor-pointer ${
+                        isDraggingOver 
+                          ? 'border-afterglow-primary bg-afterglow-primary/10' 
+                          : localFile 
+                            ? 'border-emerald-500/50 bg-emerald-500/5' 
+                            : 'border-white/10 bg-black/40 hover:border-white/20'
+                      }`}
+                      onClick={() => document.getElementById('local-m3u-input')?.click()}
+                    >
+                      <input 
+                        id="local-m3u-input" 
+                        type="file" 
+                        accept=".m3u,.m3u8" 
+                        className="hidden" 
+                        onChange={handleFileChange}
+                      />
+                      {localFile ? (
+                        <>
+                          <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                            <Tv className="w-5 h-5" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-semibold text-white truncate max-w-md">
+                              {localFile.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
+                              Ready · {(localFile.size / 1024).toFixed(1)} KB
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-afterglow-primary font-mono tracking-widest uppercase hover:underline">
+                            Click to replace file
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60">
+                            <Tv className="w-4 h-4" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-white/80">
+                              Drag & Drop Your <code className="bg-white/5 border border-white/10 px-1 rounded font-mono text-[10px]">.m3u</code> File Here
+                            </span>
+                            <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest">
+                              or click to browse local files
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </Focusable>
+                </div>
+              )}
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-mono text-white/40 uppercase tracking-widest pl-1">XMLTV EPG URL (Optional)</label>
