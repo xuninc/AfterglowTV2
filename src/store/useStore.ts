@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { MediaMetadata } from '../types/media';
+import { SupportedLanguage } from '../utils/translations';
 
 export interface EpgInjectSlot {
   id: string;
@@ -98,9 +99,11 @@ interface AppState {
   
   // Theme System States
   activeThemeId: string;
+  language: SupportedLanguage;
   
   // Actions
   addPlaylist: (playlist: Playlist) => void;
+  setLanguage: (lang: SupportedLanguage) => void;
   removePlaylist: (id: string) => void;
   setCurrentPlaylist: (id: string | null) => void;
   setCurrentChannel: (channel: Channel | null) => void;
@@ -207,6 +210,7 @@ export const useStore = create<AppState>((set, get) => ({
   
   // Theme State
   activeThemeId: loadLocalStorage<string>('glow_active_theme_id', 'afterglow-original'),
+  language: loadLocalStorage<SupportedLanguage>('glow_language', 'en'),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -429,6 +433,11 @@ export const useStore = create<AppState>((set, get) => ({
     set({ activeThemeId: id });
   },
 
+  setLanguage: (lang) => {
+    saveLocalStorage('glow_language', lang);
+    set({ language: lang });
+  },
+
   scheduleRecording: (newItem) => set((state) => {
     const job: DVRJob = {
       ...newItem,
@@ -503,6 +512,7 @@ export const useStore = create<AppState>((set, get) => ({
     localStorage.removeItem('glow_epg_inject_slots');
     localStorage.removeItem('glow_epg_inject_algo_density');
     localStorage.removeItem('glow_active_theme_id');
+    localStorage.removeItem('glow_language');
     set({
       playlists: [],
       currentPlaylistId: null,
@@ -525,7 +535,8 @@ export const useStore = create<AppState>((set, get) => ({
       epgInjectChannels: ["nasa.hd", "bunny.live"],
       epgInjectSlots: [],
       epgInjectAlgoDensity: 30,
-      activeThemeId: 'afterglow-original'
+      activeThemeId: 'afterglow-original',
+      language: 'en'
     });
   }
 }));

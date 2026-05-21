@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard, Database, Tv, Sliders, Calendar } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Settings, AlertTriangle, ShieldCheck, Sparkles, Clock, Key, CreditCard, Database, Tv, Sliders, Calendar, Languages } from 'lucide-react';
 import { Focusable } from '../common/Focusable';
 import { useStore } from '../../store/useStore';
 import axios from 'axios';
 import { parseEPG } from '../../lib/epgParser';
 import { THEME_PRESETS } from '../../utils/theme';
+import { TRANSLATIONS, SupportedLanguage } from '../../utils/translations';
 
 export const SettingsPanel: React.FC = () => {
   const playlists = useStore(state => state.playlists);
@@ -14,6 +15,10 @@ export const SettingsPanel: React.FC = () => {
   const removePlaylist = useStore(state => state.removePlaylist);
   const resetAll = useStore(state => state.resetAll);
   const updatePlaylistEpgUrl = useStore(state => state.updatePlaylistEpgUrl);
+
+  const language = useStore(state => state.language);
+  const setLanguage = useStore(state => state.setLanguage);
+  const t = TRANSLATIONS[language];
 
   const isTitleCleaningEnabled = useStore(state => state.isTitleCleaningEnabled);
   const isMarqueeEnabled = useStore(state => state.isMarqueeEnabled);

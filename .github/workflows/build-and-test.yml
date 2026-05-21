@@ -1,0 +1,44 @@
+name: Afterglow TV CI/CD Workflow
+
+on:
+  push:
+    branches: [ "main", "master", "dev" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Type Check & Linter
+        run: npm run lint
+
+      - name: Build Web Application & Express Server
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Clean Build Workspace Checks
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Error: Dist build directory has not been created."
+            exit 1
+          fi
+          if [ ! -f "dist/server.cjs" ]; then
+            echo "Error: Server production build dist/server.cjs is missing."
+            exit 1
+          fi
+          echo "Production assets and server are fully built and verified."
