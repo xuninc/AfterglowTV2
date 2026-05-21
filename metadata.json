@@ -1,0 +1,8 @@
+{
+  "name": "Afterglow TV",
+  "description": "A paradigm-shifting IPTV experience with a focus on Guide-first navigation, fluid lighting effects, and innovative media handling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
