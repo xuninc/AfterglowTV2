@@ -5,7 +5,7 @@
 ---
 
 ## 📖 Introduction & Philosophy
-**Afterglow TV** is a high-performance, station-class multimedia receiver engine designed for IPTV stream reception, XMLTV EPG scheduling, VOD library metadata enrichment, and in-browser digital video recording (DVR). It is designed to work seamlessly in web browsers and Smart TV environments (such as Android TV, Tizen, and WebOS), and can be wrapped as a native mobile application using Capacitor.
+**Afterglow TV** is a high-performance, station-class multimedia receiver engine designed for IPTV stream reception, XMLTV EPG scheduling, VOD library metadata enrichment, and in-browser digital video recording (DVR). It is designed to work seamlessly in modern web browsers and Smart TV environments (such as Android TV, Tizen, and WebOS).
 
 This document serves as the absolute source of truth for the codebase, detailing every architectural layer, algorithmic implementation, state management loop, and physical layout behavior.
 
@@ -325,42 +325,7 @@ The core shape is a mathematically mapped capital **"A"** constructed with organ
 
 ---
 
-## 📱 Section 9: Complete Ionic Capacitor APK Compiling Setup
-
-This section details how to compile the web application into an offline, performance-safe Android Native APK:
-
-### 9.1 Asset Mapping Configurations
-Ensure `capacitor.config.json` targets the optimized Vite bundle folder:
-```json
-{
-  "appId": "tv.afterglow.app",
-  "appName": "Afterglow TV",
-  "webDir": "dist",
-  "bundledWebRuntime": false
-}
-```
-
-### 9.2 Build and Sync CLI Command Pipeline
-1.  **Generate Production Web Assets**:
-    ```bash
-    npm run build
-    ```
-    *Result*: Vite produces minified code in `/dist`.
-2.  **Synchronize Native Folder Wrappers**:
-    ```bash
-    npx cap sync android
-    ```
-    *Result*: Pushes everything into local `/android` Gradle trees.
-3.  **Android Studio APK Compliances**:
-    Open native code in Android Studio:
-    ```bash
-    npx cap open android
-    ```
-    Within Android Studio, select: **Build** ➡️ **Build Bundle(s) / APK(s)** ➡️ **Build APK(s)**. This compiles optimized executable files ready to run on any physical Android TV!
-
----
-
-## 🔒 Section 10: Security Rules & Persistent Database Hardening
+## 🔒 Section 9: Security Rules & Persistent Database Hardening
 
 If deployed or synced with backends, the security schema protects users' systems and configuration profiles:
 *   **IPTV Credential Isolation**: M3U playlist file inputs, local authorization codes, and proxy credentials remain local inside secure local database indices (IndexedDB/KV store) and are never leaked to external public endpoints.
@@ -368,18 +333,18 @@ If deployed or synced with backends, the security schema protects users' systems
 
 ---
 
-## 🌐 Section 11: Internationalization (i18n) & Reactive Translation Architecture
+## 🌐 Section 10: Internationalization (i18n) & Reactive Translation Architecture
 
 To make Afterglow TV eligible for global distribution (specifically on multi-language platforms like Amazon TV or standard Android TV markets), we've implemented a fully integrated translation pipeline. This engine functions without heavy external libraries (like `react-i18next`), maintaining a lightweight and extremely quick load profile.
 
-### 11.1 Supporting Language Types & Dictionary Mapping
+### 10.1 Supporting Language Types & Dictionary Mapping
 All available languages are strictly defined under `SupportedLanguage` union type:
 ```typescript
 export type SupportedLanguage = 'en' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ja';
 ```
 A robust dictionary map is declared in `/src/utils/translations.ts` as `TRANSLATIONS`. Each language has a complete `TranslationDict` containing navigation labels, paywalls, setup forms, and panel descriptions to avoid any unlocalized text.
 
-### 11.2 Reactivity through Zustand & State Streams
+### 10.2 Reactivity through Zustand & State Streams
 1. **Persistent State Storage**: The active language state is stored as `language` inside `useStore`, backed by local storage persistence.
 2. **Component Translation Destructuring**: Every component accesses the dictionary instantly by fetching the active map:
    ```typescript
@@ -390,15 +355,15 @@ A robust dictionary map is declared in `/src/utils/translations.ts` as `TRANSLAT
 
 ---
 
-## 📐 Section 12: Advanced Vector Logo Scaling & Translation Offsets
+## 📐 Section 11: Advanced Vector Logo Scaling & Translation Offsets
 
 Understanding how Afterglow's premium vector "A" fits into various small containers (such as a 76px wide collapsed sidebar) requires analyzing its underlying coordinate systems and transformation mathematics.
 
-### 12.1 The SVG ViewBox Matrix
+### 11.1 The SVG ViewBox Matrix
 The root vector element in `/src/components/common/StylizedLogo.tsx` is defined with a standard coordinate bounding box:
 * **viewBox**: `0 0 100 100`
 
-### 12.2 Scale Transformation Formula (S=1.6)
+### 11.2 Scale Transformation Formula (S=1.6)
 To maximize the visually stunning capital "A" and its flowing swoosh crossbar (ensuring it never appears small), we scale the relative coordinates up from their base definitions by a scale factor $S = 1.6$.
 
 To keep the shape perfectly centered in the horizontal space, we solve for the translation offset $T_x$ using the horizontal midpoint equation:

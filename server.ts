@@ -162,16 +162,20 @@ async function startServer() {
 
   // API: Fetch and Parse M3U
   app.get("/api/playlist", async (req, res) => {
-    const { url } = req.query;
+    const { url, userAgent } = req.query;
     if (!url || typeof url !== "string") {
       return res.status(400).json({ error: "URL is required" });
     }
+
+    const resolvedUserAgent = typeof userAgent === "string" && userAgent
+      ? userAgent
+      : "VLC/3.0.18 LibVLC/3.0.18";
 
     try {
       const response = await axios.get(url, {
         timeout: 15000,
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "User-Agent": resolvedUserAgent,
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
           "Accept-Language": "en-US,en;q=0.9"
         }
@@ -213,16 +217,20 @@ async function startServer() {
 
   // API: Fetch EPG (Pass-through for now, or parse later)
   app.get("/api/epg", async (req, res) => {
-    const { url } = req.query;
+    const { url, userAgent } = req.query;
     if (!url || typeof url !== "string") {
       return res.status(400).json({ error: "URL is required" });
     }
+
+    const resolvedUserAgent = typeof userAgent === "string" && userAgent
+      ? userAgent
+      : "VLC/3.0.18 LibVLC/3.0.18";
 
     try {
       const response = await axios.get(url, {
         timeout: 20000,
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "User-Agent": resolvedUserAgent,
           "Accept": "application/xml,text/xml,*/*;q=0.8"
         }
       });
@@ -416,6 +424,111 @@ ${JSON.stringify(titles)}`;
         error: "Forbidden", 
         details: "Stalker middleware blocked request (typical of remote MAG devices). Fallback demo setup is enabled." 
       });
+    }
+  });
+
+  // API: CORS and Mixed Content Stream Proxy
+  app.get("/api/stream-proxy", async (req, res) => {
+    const { url, userAgent } = req.query;
+    if (!url || typeof url !== "string") {
+      return res.status(400).send("URL parameter is required");
+    }
+
+    const resolvedUserAgent = typeof userAgent === "string" && userAgent
+      ? userAgent
+      : "VLC/3.0.18 LibVLC/3.0.18";
+
+    try {
+      const decodedUrl = decodeURIComponent(url);
+
+      const headers: Record<string, string> = {
+        "User-Agent": resolvedUserAgent,
+        "Accept": "*/*",
+      };
+
+      // Handle common m3u8 headers or standard chunk requests
+      const isM3u8 = decodedUrl.toLowerCase().includes(".m3u8") || 
+                     decodedUrl.toLowerCase().includes("m3u8");
+
+      if (isM3u8) {
+        // Fetch as text to rewrite URLs so child streams and chunks are proxied as well
+        const textResponse = await axios.get(decodedUrl, {
+          headers,
+          timeout: 10005,
+          responseType: "text",
+        });
+
+        const lines = textResponse.data.split(/\r?\n/);
+        const outputLines = lines.map((line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+
+          // If line starts with '#', check if there is an embedded URI to rewrite (e.g., encryption keys or sub-playlists)
+          if (trimmed.startsWith("#")) {
+            let updatedLine = line;
+            // Match URI="http://..." or URI="something.m3u8"
+            const uriMatches = line.match(/URI="([^"]+)"/);
+            if (uriMatches) {
+              const originalUri = uriMatches[1];
+              try {
+                const absoluteUri = new URL(originalUri, decodedUrl).href;
+                let proxiedUri = `/api/stream-proxy?url=${encodeURIComponent(absoluteUri)}`;
+                if (resolvedUserAgent) {
+                  proxiedUri += `&userAgent=${encodeURIComponent(resolvedUserAgent)}`;
+                }
+                updatedLine = line.replace(`URI="${originalUri}"`, `URI="${proxiedUri}"`);
+              } catch (e) {
+                // Ignore invalid URLs
+              }
+            }
+            return updatedLine;
+          }
+
+          // If the line is a relative/absolute stream or segment URL
+          try {
+            const absoluteUrl = new URL(trimmed, decodedUrl).href;
+            let proxiedUri = `/api/stream-proxy?url=${encodeURIComponent(absoluteUrl)}`;
+            if (resolvedUserAgent) {
+              proxiedUri += `&userAgent=${encodeURIComponent(resolvedUserAgent)}`;
+            }
+            return proxiedUri;
+          } catch (e) {
+            return line;
+          }
+        });
+
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "*");
+        return res.send(outputLines.join("\n"));
+      }
+
+      // Otherwise it is a binary chunk (.ts), license key, etc. Stream/Pipe directly.
+      const response = await axios({
+        method: "get",
+        url: decodedUrl,
+        headers,
+        responseType: "stream",
+        timeout: 15000,
+        validateStatus: () => true,
+      });
+
+      res.status(response.status);
+      const contentType = response.headers["content-type"];
+      if (contentType && typeof contentType === "string") {
+        res.setHeader("Content-Type", contentType);
+      }
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+      
+      response.data.pipe(res);
+    } catch (err: any) {
+      console.warn("Stream proxy exception:", err.message);
+      if (!res.headersSent) {
+        res.status(502).send(`Stream proxy failed: ${err.message}`);
+      }
     }
   });
 

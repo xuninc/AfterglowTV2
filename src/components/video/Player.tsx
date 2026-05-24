@@ -23,6 +23,7 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
   const mediaLibrary = useStore(state => state.mediaLibrary);
   const epgData = useStore(state => state.epgData);
   const isVaultSubstitutionEnabled = useStore(state => state.isVaultSubstitutionEnabled);
+  const customUserAgent = useStore(state => state.customUserAgent);
 
   const [ambientColor, setAmbientColor] = useState('rgba(255, 62, 0, 0.2)');
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -126,11 +127,39 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
     return "https://test-streams.mux.dev/x36xhg/main.m3u8"; // High stable primary playback
   };
 
-  const currentActiveUrl = forcedFallbackUrl
+  const getProxyRouteIfNeeded = (streamUrl: string) => {
+    if (!streamUrl) return '';
+    if (streamUrl.startsWith('/') || streamUrl.startsWith('blob:') || streamUrl.startsWith('data:')) {
+      return streamUrl;
+    }
+    
+    const u = streamUrl.toLowerCase();
+    // Known high-availability test streams can be fetched directly to optimize latency
+    if (
+      u.includes('test-streams.mux.dev') ||
+      u.includes('demo.unified-streaming.com') ||
+      u.includes('playertest.longtailvideo.com')
+    ) {
+      return streamUrl;
+    }
+
+    // Bypass CORS and Mixed Content policies dynamically
+    let proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}`;
+    if (customUserAgent) {
+      proxyUrl += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+    }
+    return proxyUrl;
+  };
+
+  const rawActiveUrl = forcedFallbackUrl
     ? forcedFallbackUrl
     : (isVaultSubActive && vaultMatch
       ? getSubstitutedStreamUrl(vaultMatch.item.displayTitle)
       : url);
+
+  const currentActiveUrl = useMemo(() => {
+    return getProxyRouteIfNeeded(rawActiveUrl);
+  }, [rawActiveUrl, customUserAgent]);
 
   // Pre-fetching Logic (Neural Warm-up) - Debounced
   useEffect(() => {

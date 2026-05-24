@@ -9,6 +9,14 @@ import { useStore } from '../store/useStore';
 import { parseEPG } from '../lib/epgParser';
 import { DEMO_PLAYLIST } from '../data/demoData';
 
+const USER_AGENT_PRESETS = [
+  { label: 'VLC Media Player (High Acceptance)', value: 'VLC/3.0.18 LibVLC/3.0.18' },
+  { label: 'TiviMate AndroidTV (Recommended)', value: 'TiviMate/4.7.0 (Xiaomi MiTV-MSSP3; Android 9)' },
+  { label: 'Standard Chrome Browser Spoof', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36' },
+  { label: 'IPTV Smarters Agent', value: 'IPTVSmarters' },
+  { label: 'None (Default User-Agent)', value: '' }
+];
+
 type SelectionTab = 'm3u' | 'xtream' | 'stalker' | 'demo';
 
 export const SetupScreen: React.FC = () => {
@@ -37,6 +45,8 @@ export const SetupScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   const addPlaylist = useStore(state => state.addPlaylist);
+  const customUserAgent = useStore(state => state.customUserAgent);
+  const setCustomUserAgent = useStore(state => state.setCustomUserAgent);
 
   // Parse playlist response and register
   const registerPlaylist = (playlistData: any, defaultName: string, sourceUrl: string, epg?: string) => {
@@ -193,7 +203,9 @@ export const SetupScreen: React.FC = () => {
           registerPlaylist(parsedData, localFile?.name || "Local File Playlist", "local-file", epgUrl);
           
           if (epgUrl) {
-            axios.get(`/api/epg?url=${encodeURIComponent(epgUrl)}`)
+            let epgQuery = `/api/epg?url=${encodeURIComponent(epgUrl)}`;
+            if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+            axios.get(epgQuery)
               .then(res => {
                 const parsed = parseEPG(res.data);
                 useStore.getState().setEpgData(parsed);
@@ -206,11 +218,15 @@ export const SetupScreen: React.FC = () => {
             setLoading(false);
             return;
           }
-          const response = await axios.get(`/api/playlist?url=${encodeURIComponent(url)}`);
+          let playlistQuery = `/api/playlist?url=${encodeURIComponent(url)}`;
+          if (customUserAgent) playlistQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+          const response = await axios.get(playlistQuery);
           registerPlaylist(response.data, "Glow M3U Broadcast", url, epgUrl);
 
           if (epgUrl) {
-            axios.get(`/api/epg?url=${encodeURIComponent(epgUrl)}`)
+            let epgQuery = `/api/epg?url=${encodeURIComponent(epgUrl)}`;
+            if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+            axios.get(epgQuery)
               .then(res => {
                 const parsed = parseEPG(res.data);
                 useStore.getState().setEpgData(parsed);
@@ -231,11 +247,15 @@ export const SetupScreen: React.FC = () => {
         const convertedM3uUrl = `${hostUrl}/get.php?username=${xtreamUser}&password=${xtreamPass}&output=m3u_plus`;
         const convertedEpgUrl = `${hostUrl}/xmltv.php?username=${xtreamUser}&password=${xtreamPass}`;
         
-        const response = await axios.get(`/api/playlist?url=${encodeURIComponent(convertedM3uUrl)}`);
+        let playlistQuery = `/api/playlist?url=${encodeURIComponent(convertedM3uUrl)}`;
+        if (customUserAgent) playlistQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+        const response = await axios.get(playlistQuery);
         registerPlaylist(response.data, `Xtream (${xtreamUser})`, convertedM3uUrl, convertedEpgUrl);
 
         // Fetch EPG in background
-        axios.get(`/api/epg?url=${encodeURIComponent(convertedEpgUrl)}`)
+        let epgQuery = `/api/epg?url=${encodeURIComponent(convertedEpgUrl)}`;
+        if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+        axios.get(epgQuery)
           .then(res => {
             const parsed = parseEPG(res.data);
             useStore.getState().setEpgData(parsed);
@@ -553,6 +573,62 @@ export const SetupScreen: React.FC = () => {
               <p className="text-xs text-white/40 max-w-sm">
                 No active credentials? Activate the instant, high-reliability Glow Broadcast to inspect high-definition live channels, video-on-demand cover layouts, and ambient backlighting.
               </p>
+            </div>
+          )}
+
+          {/* Advanced User-Agent Customization */}
+          {activeTab !== 'demo' && (
+            <div className="flex flex-col gap-3 bg-black/30 border border-white/5 p-4 rounded-xl">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-afterglow-primary font-bold uppercase tracking-widest flex items-center gap-1.5">
+                  📡 CORRELATION LAYER: SENDER BINDING (USER-AGENT)
+                </span>
+                <p className="text-[9px] text-white/40">
+                  Spoofing sender identification bypasses security blocks or CORS firewalls enforced by some providers.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] font-mono text-white/40 uppercase tracking-widest pl-1">PRESET IDENTIFIER</label>
+                  <select
+                    className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[11px] font-light text-white focus:outline-none focus:border-afterglow-primary cursor-pointer"
+                    value={
+                      USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || ''))
+                        ? (customUserAgent || '')
+                        : 'custom'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        setCustomUserAgent('VLC/3.0.18 LibVLC/3.0.18');
+                      } else {
+                        setCustomUserAgent(val || null);
+                      }
+                    }}
+                  >
+                    {USER_AGENT_PRESETS.map((preset) => (
+                      <option key={preset.value} value={preset.value} className="bg-afterglow-card text-white">
+                        {preset.label}
+                      </option>
+                    ))}
+                    <option value="custom" className="bg-afterglow-card text-white">Custom User-Agent...</option>
+                  </select>
+                </div>
+
+                {(!USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || '')) || customUserAgent === 'custom') && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[8px] font-mono text-white/40 uppercase tracking-widest pl-1">CUSTOM BINDING STRING</label>
+                    <input
+                      type="text"
+                      className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[11px] font-mono text-white focus:outline-none focus:border-afterglow-primary"
+                      placeholder="e.g. MyCustomPlayer/1.0"
+                      value={customUserAgent || ''}
+                      onChange={(e) => setCustomUserAgent(e.target.value || null)}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

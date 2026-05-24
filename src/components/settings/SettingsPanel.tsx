@@ -7,6 +7,14 @@ import { parseEPG } from '../../lib/epgParser';
 import { THEME_PRESETS } from '../../utils/theme';
 import { TRANSLATIONS, SupportedLanguage } from '../../utils/translations';
 
+const USER_AGENT_PRESETS = [
+  { label: 'VLC Media Player (High Acceptance)', value: 'VLC/3.0.18 LibVLC/3.0.18' },
+  { label: 'TiviMate AndroidTV (Recommended)', value: 'TiviMate/4.7.0 (Xiaomi MiTV-MSSP3; Android 9)' },
+  { label: 'Standard Chrome Browser Spoof', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36' },
+  { label: 'IPTV Smarters Agent', value: 'IPTVSmarters' },
+  { label: 'None (Default User-Agent)', value: '' }
+];
+
 export const SettingsPanel: React.FC = () => {
   const playlists = useStore(state => state.playlists);
   const currentPlaylistId = useStore(state => state.currentPlaylistId);
@@ -19,6 +27,8 @@ export const SettingsPanel: React.FC = () => {
 
   const language = useStore(state => state.language);
   const setLanguage = useStore(state => state.setLanguage);
+  const customUserAgent = useStore(state => state.customUserAgent);
+  const setCustomUserAgent = useStore(state => state.setCustomUserAgent);
   const t = TRANSLATIONS[language];
 
   const isTitleCleaningEnabled = useStore(state => state.isTitleCleaningEnabled);
@@ -444,6 +454,63 @@ export const SettingsPanel: React.FC = () => {
                 </Focusable>
               );
             })}
+          </div>
+        </div>
+
+        {/* User-Agent spoofing configuration block */}
+        <div className="bg-afterglow-card/40 border border-white/5 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 right-0 w-80 h-40 bg-pink-500/5 blur-[80px] rounded-full pointer-events-none" />
+          
+          <div className="border-b border-white/5 pb-4">
+            <h3 className="text-sm font-mono text-white/95 tracking-widest uppercase flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-pink-400 animate-pulse" />
+              <span>IPTV CONNECTION GATEWAY (USER-AGENT CONTROL)</span>
+            </h3>
+            <p className="text-[10px] text-white/40 font-mono mt-1 max-w-2xl leading-relaxed">
+              Spoofing or custom-binding the sender User-Agent bypasses strict Firewalls, country locks, and CORS policies commonly enforced by premium IPTV providers.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">PRESET SENDER IDENTIFIER</label>
+              <select
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm font-light text-white focus:outline-none focus:border-afterglow-primary cursor-pointer"
+                value={
+                  USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || ''))
+                    ? (customUserAgent || '')
+                    : 'custom'
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'custom') {
+                    setCustomUserAgent('VLC/3.0.18 LibVLC/3.0.18');
+                  } else {
+                    setCustomUserAgent(val || null);
+                  }
+                }}
+              >
+                {USER_AGENT_PRESETS.map((preset) => (
+                  <option key={preset.value} value={preset.value} className="bg-afterglow-card text-white">
+                    {preset.label}
+                  </option>
+                ))}
+                <option value="custom" className="bg-afterglow-card text-white">Custom Overriding User-Agent...</option>
+              </select>
+            </div>
+
+            {(!USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || '')) || customUserAgent === 'custom') && (
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">CUSTOM BINDING STRING Override</label>
+                <input
+                  type="text"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-afterglow-primary"
+                  placeholder="e.g. MyCustomReceiver/3.2"
+                  value={customUserAgent || ''}
+                  onChange={(e) => setCustomUserAgent(e.target.value || null)}
+                />
+              </div>
+            )}
           </div>
         </div>
 

@@ -101,11 +101,13 @@ interface AppState {
   activeThemeId: string;
   language: SupportedLanguage;
   serverUrl: string;
+  customUserAgent: string | null;
   
   // Actions
   addPlaylist: (playlist: Playlist) => void;
   setServerUrl: (url: string) => void;
   setLanguage: (lang: SupportedLanguage) => void;
+  setCustomUserAgent: (ua: string | null) => void;
   removePlaylist: (id: string) => void;
   setCurrentPlaylist: (id: string | null) => void;
   setCurrentChannel: (channel: Channel | null) => void;
@@ -241,6 +243,7 @@ export const useStore = create<AppState>((set, get) => ({
   activeThemeId: loadLocalStorage<string>('glow_active_theme_id', 'afterglow-original'),
   language: loadLocalStorage<SupportedLanguage>('glow_language', 'en'),
   serverUrl: loadLocalStorage<string>('glow_server_url', typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') ? window.location.origin : ''),
+  customUserAgent: loadLocalStorage<string | null>('glow_custom_user_agent', null),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -471,6 +474,11 @@ export const useStore = create<AppState>((set, get) => ({
   setLanguage: (lang) => {
     saveLocalStorage('glow_language', lang);
     set({ language: lang });
+  },
+
+  setCustomUserAgent: (ua) => {
+    saveLocalStorage('glow_custom_user_agent', ua);
+    set({ customUserAgent: ua });
   },
 
   scheduleRecording: (newItem) => set((state) => {
