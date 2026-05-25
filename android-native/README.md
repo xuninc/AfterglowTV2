@@ -22,7 +22,9 @@ This project is intentionally separate from the Capacitor proof-of-life app. The
 - DVR recorder surface with guide-based queued captures, automatic due-job recording, and a saved recordings library.
 - DVR output targets include device/app movie storage by default, Android Storage Access Framework folders for external disks or provider-backed network folders, manual paths for mounted USB/network shares, and credentialed SMB2/SMB3 shares through SMBJ.
 - SMB DVR targets collect server, share, folder, username, optional domain, and password in-app. The password is stored encrypted with Android Keystore and is not written into DVR job records.
+- SMB targets can be validated from the DVR screen with `TEST SMB`; blank username/password uses SMB guest authentication.
 - Direct HTTP streams are captured to `.ts`; HLS playlist streams are captured by appending media segments when the provider exposes normal segment playlists.
+- Manifest permissions are in place for foreground DVR recording and notifications on modern Android TV / Fire OS builds.
 - Android TV / Fire TV manifest support, including Leanback launcher and touch-optional hardware flags.
 
 ## Build

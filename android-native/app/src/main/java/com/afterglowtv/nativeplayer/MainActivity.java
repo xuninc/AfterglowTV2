@@ -1852,7 +1852,7 @@ public class MainActivity extends Activity {
         com.hierynomus.smbj.share.File smbFile = null;
         try {
             connection = client.connect(target.host);
-            AuthenticationContext auth = new AuthenticationContext(target.username, getSmbPassword().toCharArray(), target.domain);
+            AuthenticationContext auth = createSmbAuthenticationContext(target, getSmbPassword());
             session = connection.authenticate(auth);
             share = (DiskShare) session.connectShare(target.share);
 
@@ -1878,6 +1878,39 @@ public class MainActivity extends Activity {
             closeAuto(client);
             throw error;
         }
+    }
+
+    private void testSmbTarget(SmbTarget target, String password) throws Exception {
+        if (target.host.isEmpty() || target.share.isEmpty()) {
+            throw new IOException("SMB server or share is missing.");
+        }
+
+        SMBClient client = new SMBClient();
+        Connection connection = null;
+        Session session = null;
+        DiskShare share = null;
+        try {
+            connection = client.connect(target.host);
+            session = connection.authenticate(createSmbAuthenticationContext(target, password));
+            share = (DiskShare) session.connectShare(target.share);
+            String remoteFolder = normalizeSmbFolder(target.path);
+            ensureSmbDirectories(share, remoteFolder);
+            if (!remoteFolder.isEmpty() && !share.folderExists(remoteFolder)) {
+                throw new IOException("SMB folder was not created.");
+            }
+        } finally {
+            closeAuto(share);
+            closeAuto(session);
+            closeAuto(connection);
+            closeAuto(client);
+        }
+    }
+
+    private AuthenticationContext createSmbAuthenticationContext(SmbTarget target, String password) {
+        if (target.username.isEmpty() && (password == null || password.isEmpty())) {
+            return AuthenticationContext.guest();
+        }
+        return new AuthenticationContext(target.username, (password == null ? "" : password).toCharArray(), target.domain);
     }
 
     private void ensureSmbDirectories(DiskShare share, String remoteFolder) throws IOException {
@@ -1977,8 +2010,38 @@ public class MainActivity extends Activity {
             return;
         }
 
-        SharedPreferences.Editor editor = prefs.edit()
-            .putString("dvr_target_mode", DVR_TARGET_SMB)
+        if (!saveSmbTarget(target, true)) {
+            return;
+        }
+
+        setStatus("DVR TARGET SMB", false);
+        renderDvrView();
+    }
+
+    private void testDvrTargetSmb() {
+        SmbTarget target = readSmbTargetFromInputs();
+        if (target.host.isEmpty() || target.share.isEmpty()) {
+            setStatus("ENTER SMB SERVER AND SHARE", true);
+            return;
+        }
+        String password = passwordFromSmbInputOrSaved();
+        setStatus("TESTING SMB SHARE", false);
+        executor.execute(() -> {
+            try {
+                testSmbTarget(target, password);
+                mainHandler.post(() -> setStatus("SMB TARGET READY", false));
+            } catch (Exception error) {
+                mainHandler.post(() -> setStatus("SMB TEST FAILED", true));
+            }
+        });
+    }
+
+    private boolean saveSmbTarget(SmbTarget target, boolean activate) {
+        SharedPreferences.Editor editor = prefs.edit();
+        if (activate) {
+            editor.putString("dvr_target_mode", DVR_TARGET_SMB);
+        }
+        editor
             .putString("dvr_smb_host", target.host)
             .putString("dvr_smb_share", target.share)
             .putString("dvr_smb_path", target.path)
@@ -1990,14 +2053,13 @@ public class MainActivity extends Activity {
             String encrypted = encryptPreferenceValue(typedPassword);
             if (encrypted.isEmpty()) {
                 setStatus("SMB PASSWORD SAVE FAILED", true);
-                return;
+                return false;
             }
             editor.putString("dvr_smb_password_enc", encrypted);
         }
 
         editor.apply();
-        setStatus("DVR TARGET SMB", false);
-        renderDvrView();
+        return true;
     }
 
     private String getDvrTargetMode() {
@@ -2456,6 +2518,11 @@ public class MainActivity extends Activity {
 
     private String getSmbPassword() {
         return decryptPreferenceValue(prefs.getString("dvr_smb_password_enc", ""));
+    }
+
+    private String passwordFromSmbInputOrSaved() {
+        String typed = dvrSmbPasswordInput == null ? "" : dvrSmbPasswordInput.getText().toString();
+        return typed.isEmpty() ? getSmbPassword() : typed;
     }
 
     private int parseIntSafe(String value) {
