@@ -12,8 +12,8 @@ This project is intentionally separate from the Capacitor proof-of-life app. The
 - First launch preloads the Free-TV starter playlist (`https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8`) so Guide/player surfaces are populated immediately, while user-supplied playlists still replace it when loaded.
 - M3U loading and basic channel parsing in-app.
 - XMLTV EPG loading in-app for the normal live guide.
-- EPG-style horizontal guide rows with current/upcoming programme cells and generated placeholders when XMLTV is missing.
-- Afterglow-inspired dark TV layout with player surface, sidebar navigation, category ribbon, native rows, and the restored React SVG-derived logo mark in the header/sidebar/launcher banner.
+- 24-hour EPG-style horizontal guide rows with current/upcoming programme cells, generated placeholders when XMLTV is missing, and optional vault/library programme injection.
+- React prototype visual language ported to native TV controls, including Inter/Outfit/JetBrains Mono fonts, compact spacing, focus glow, sidebar layout, player surface, category ribbon, native rows, and the restored React SVG-derived logo mark in the header/sidebar/launcher banner.
 - Separate native surfaces for Guide, VOD, XXX, DVR, Library, and Settings.
 - XXX/adult groups are isolated from the normal live guide and VOD catalog.
 - VOD title cleanup and local genre classification copied from the web prototype direction.
@@ -28,6 +28,7 @@ This project is intentionally separate from the Capacitor proof-of-life app. The
 - Manifest permissions are in place for foreground DVR recording and notifications on modern Android TV / Fire OS builds.
 - Due DVR jobs now run through `DvrRecordingService`, a foreground data-sync service that keeps capture work outside the Activity lifecycle and reports completion back to the DVR screen.
 - DVR recording requests notification permission on Android 13+ and holds a partial wake lock during active capture to reduce mid-recording sleep failures.
+- Settings are editable in-app: User-Agent presets/custom value, XMLTV sync URL, optional backend origin, theme/language selection, feature toggles, VOD layout preference, EPG vault injector mode/channels/density/manual slots, trial/premium state, JSON backup/export/import, and full native data reset.
 - Android TV / Fire TV manifest support, including Leanback launcher and touch-optional hardware flags.
 
 ## Build
@@ -50,7 +51,6 @@ Core app should be direct-play only. Unsupported codecs should show a clear comp
 
 ## Next Native Work
 
-- Replace the simple native row list with a true time-grid guide.
 - Add SMB/WebDAV/NFS network-share support for local library scanning.
 - Persist parsed playlist, EPG, and library catalog in SQLite/Room instead of lightweight internal cache files.
 - Move shared DVR serialization/recording helpers out of `MainActivity`/`DvrRecordingService` duplication into a small common Java utility package.
