@@ -28,6 +28,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -91,6 +92,7 @@ import java.security.KeyStore;
 
 public class MainActivity extends Activity {
     private static final String DEFAULT_USER_AGENT = "VLC/3.0.18 LibVLC/3.0.18";
+    private static final String DEFAULT_STARTER_PLAYLIST_URL = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8";
     private static final String PREFS_NAME = "afterglow_native_prefs";
     private static final String CHANNEL_CACHE_FILE = "afterglow_channels.cache";
     private static final String LIBRARY_CACHE_FILE = "afterglow_library.cache";
@@ -186,9 +188,10 @@ public class MainActivity extends Activity {
         buildUi();
 
         String savedPlaylist = prefs.getString("playlist_url", "");
+        String startupPlaylist = savedPlaylist == null || savedPlaylist.trim().isEmpty() ? DEFAULT_STARTER_PLAYLIST_URL : savedPlaylist;
         String savedEpg = prefs.getString("epg_url", "");
         String savedUserAgent = prefs.getString("user_agent", DEFAULT_USER_AGENT);
-        playlistInput.setText(savedPlaylist);
+        playlistInput.setText(startupPlaylist);
         epgInput.setText(savedEpg);
         userAgentInput.setText(savedUserAgent == null || savedUserAgent.trim().isEmpty() ? DEFAULT_USER_AGENT : savedUserAgent);
         loadDvrSchedule();
@@ -200,8 +203,8 @@ public class MainActivity extends Activity {
         renderCurrentView();
         mainHandler.postDelayed(dvrScheduler, 5000);
 
-        if (savedPlaylist != null && !savedPlaylist.trim().isEmpty()) {
-            loadPlaylist(savedPlaylist.trim());
+        if (startupPlaylist != null && !startupPlaylist.trim().isEmpty()) {
+            loadPlaylist(startupPlaylist.trim());
         }
         if (savedEpg != null && !savedEpg.trim().isEmpty()) {
             loadEpg(savedEpg.trim());
@@ -337,13 +340,10 @@ public class MainActivity extends Activity {
         sidebar.setPadding(dp(10), dp(14), dp(10), dp(14));
         sidebar.setBackground(card(COLOR_PANEL, Color.argb(40, 255, 255, 255), dp(18)));
 
-        TextView logo = new TextView(this);
-        logo.setText("AFTER\nGLOW");
-        logo.setTextColor(COLOR_TEXT);
-        logo.setTextSize(15);
-        logo.setTypeface(Typeface.DEFAULT_BOLD);
-        logo.setGravity(Gravity.CENTER);
-        logo.setLetterSpacing(0.08f);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.afterglow_logo_mark);
+        logo.setAdjustViewBounds(true);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         sidebar.addView(logo, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(72)));
 
         addNavButton(sidebar, "GUIDE", ViewMode.GUIDE);
@@ -357,7 +357,7 @@ public class MainActivity extends Activity {
         sidebar.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
 
         TextView build = new TextView(this);
-        build.setText("NATIVE\n0.2");
+        build.setText("TV\nENGINE");
         build.setTextColor(Color.argb(110, 245, 242, 240));
         build.setTextSize(9);
         build.setGravity(Gravity.CENTER);
@@ -388,15 +388,23 @@ public class MainActivity extends Activity {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
+        ImageView mark = new ImageView(this);
+        mark.setImageResource(R.drawable.afterglow_logo_mark);
+        mark.setAdjustViewBounds(true);
+        mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams markParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        markParams.setMargins(0, 0, dp(14), 0);
+        header.addView(mark, markParams);
+
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
         titleBlock.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView eyebrow = label("ANDROID TV / FIRE TV DIRECT PLAY", 10, COLOR_PRIMARY, true);
+        TextView eyebrow = label("RECEIVER ENGINE / ANDROID TV / FIRE TV", 10, COLOR_PRIMARY, true);
         titleBlock.addView(eyebrow);
 
         TextView title = new TextView(this);
-        title.setText("Afterglow TV Native");
+        title.setText("Afterglow TV");
         title.setTextColor(COLOR_TEXT);
         title.setTextSize(27);
         title.setTypeface(Typeface.DEFAULT_BOLD);

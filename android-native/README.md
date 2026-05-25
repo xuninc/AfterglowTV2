@@ -1,4 +1,4 @@
-# Afterglow TV Native
+# Afterglow TV Android
 
 Native Android TV / Fire TV branch focused on direct device playback.
 
@@ -9,10 +9,11 @@ This project is intentionally separate from the Capacitor proof-of-life app. The
 - Java native Android app, no WebView playback dependency.
 - AndroidX Media3 / ExoPlayer playback.
 - VLC default User-Agent sent by native networking and player requests.
+- First launch preloads the Free-TV starter playlist (`https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8`) so Guide/player surfaces are populated immediately, while user-supplied playlists still replace it when loaded.
 - M3U loading and basic channel parsing in-app.
 - XMLTV EPG loading in-app for the normal live guide.
 - EPG-style horizontal guide rows with current/upcoming programme cells and generated placeholders when XMLTV is missing.
-- Afterglow-inspired dark TV layout with player surface, sidebar navigation, category ribbon, and native rows.
+- Afterglow-inspired dark TV layout with player surface, sidebar navigation, category ribbon, native rows, and the restored React SVG-derived logo mark in the header/sidebar/launcher banner.
 - Separate native surfaces for Guide, VOD, XXX, DVR, Library, and Settings.
 - XXX/adult groups are isolated from the normal live guide and VOD catalog.
 - VOD title cleanup and local genre classification copied from the web prototype direction.
