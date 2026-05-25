@@ -1,13 +1,18 @@
 package com.afterglowtv.nativeplayer;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -94,6 +99,7 @@ public class MainActivity extends Activity {
     private static final String KEYSTORE_ALIAS_SMB_PASSWORD = "afterglow_dvr_smb_password";
     private static final int REQUEST_LIBRARY_TREE = 4510;
     private static final int REQUEST_DVR_TREE = 4511;
+    private static final int REQUEST_NOTIFICATIONS = 4512;
     private static final int MAX_RENDERED_CHANNELS = 500;
     private static final String DVR_TARGET_DEVICE = "device";
     private static final String DVR_TARGET_TREE = "tree";
@@ -123,6 +129,15 @@ public class MainActivity extends Activity {
         public void run() {
             evaluateDvrSchedule(false);
             mainHandler.postDelayed(this, 30000);
+        }
+    };
+    private final BroadcastReceiver dvrCompletionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !DvrRecordingService.ACTION_DVR_RECORDING_FINISHED.equals(intent.getAction())) {
+                return;
+            }
+            handleDvrRecordingFinished(intent);
         }
     };
 
@@ -166,6 +181,8 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUi();
+        registerDvrCompletionReceiver();
+        requestDvrNotificationPermissionIfNeeded();
         buildUi();
 
         String savedPlaylist = prefs.getString("playlist_url", "");
@@ -202,6 +219,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         mainHandler.removeCallbacks(dvrScheduler);
+        try {
+            unregisterReceiver(dvrCompletionReceiver);
+        } catch (Exception ignored) {
+        }
         releasePlayer();
         executor.shutdownNow();
         recordingExecutor.shutdownNow();
@@ -236,6 +257,40 @@ public class MainActivity extends Activity {
                 renderDvrView();
             }
         }
+    }
+
+    private void registerDvrCompletionReceiver() {
+        IntentFilter filter = new IntentFilter(DvrRecordingService.ACTION_DVR_RECORDING_FINISHED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(dvrCompletionReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(dvrCompletionReceiver, filter);
+        }
+    }
+
+    private void handleDvrRecordingFinished(Intent intent) {
+        String key = intent.getStringExtra(DvrRecordingService.EXTRA_KEY);
+        boolean success = intent.getBooleanExtra(DvrRecordingService.EXTRA_SUCCESS, false);
+        long bytes = intent.getLongExtra(DvrRecordingService.EXTRA_BYTES, 0L);
+        if (key != null) {
+            activeRecordingKeys.remove(key);
+        }
+        loadDvrSchedule();
+        loadDvrRecordings();
+        setStatus(success ? "DVR SAVED " + formatBytes(bytes) : "DVR RECORDING FAILED", !success);
+        if (activeView == ViewMode.DVR) {
+            renderDvrView();
+        }
+    }
+
+    private void requestDvrNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQUEST_NOTIFICATIONS);
     }
 
     private void hideSystemUi() {
@@ -1623,52 +1678,23 @@ public class MainActivity extends Activity {
         if (activeView == ViewMode.DVR) {
             renderDvrView();
         }
-
-        recordingExecutor.execute(() -> {
-            DvrOutput target = null;
-            long bytesWritten = 0L;
-            Exception failure = null;
-            try {
-                target = openDvrOutput(job);
-                bytesWritten = recordDvrStream(job, target.stream);
-            } catch (Exception error) {
-                failure = error;
-            } finally {
-                if (target != null) {
-                    closeQuietly(target.stream);
-                }
-            }
-
-            DvrOutput finishedTarget = target;
-            long finishedBytes = bytesWritten;
-            Exception finishedFailure = failure;
-            mainHandler.post(() -> {
-                activeRecordingKeys.remove(job.key);
-                dvrJobs.remove(job.key);
-                scheduledRecordings.remove(job.key);
-                job.status = finishedFailure == null && finishedBytes > 0 ? "COMPLETE" : "FAILED";
-                if (finishedFailure == null && finishedBytes > 0 && finishedTarget != null) {
-                    dvrRecordings.add(0, new DvrRecording(
-                        job.key + "-" + System.currentTimeMillis(),
-                        job.title,
-                        job.channelName,
-                        finishedTarget.uri,
-                        finishedTarget.displayPath,
-                        System.currentTimeMillis(),
-                        finishedBytes,
-                        Math.max(0L, Math.min(System.currentTimeMillis(), job.stopMillis) - job.startMillis)
-                    ));
-                    saveDvrRecordings();
-                    setStatus("DVR SAVED " + formatBytes(finishedBytes), false);
-                } else {
-                    setStatus("DVR RECORDING FAILED", true);
-                }
-                saveDvrSchedule();
-                if (activeView == ViewMode.DVR) {
-                    renderDvrView();
-                }
-            });
-        });
+        Intent recordIntent = new Intent(this, DvrRecordingService.class)
+            .setAction(DvrRecordingService.ACTION_RECORD)
+            .putExtra(DvrRecordingService.EXTRA_KEY, job.key)
+            .putExtra(DvrRecordingService.EXTRA_TITLE, job.title)
+            .putExtra(DvrRecordingService.EXTRA_CHANNEL_NAME, job.channelName)
+            .putExtra(DvrRecordingService.EXTRA_STREAM_URL, job.streamUrl)
+            .putExtra(DvrRecordingService.EXTRA_START_MILLIS, job.startMillis)
+            .putExtra(DvrRecordingService.EXTRA_STOP_MILLIS, job.stopMillis)
+            .putExtra(DvrRecordingService.EXTRA_TARGET_MODE, job.targetMode)
+            .putExtra(DvrRecordingService.EXTRA_TARGET_LOCATION, job.targetLocation)
+            .putExtra(DvrRecordingService.EXTRA_TARGET_LABEL, job.targetLabel)
+            .putExtra(DvrRecordingService.EXTRA_USER_AGENT, getUserAgent());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(recordIntent);
+        } else {
+            startService(recordIntent);
+        }
     }
 
     private long recordDvrStream(DvrJob job, OutputStream output) throws Exception {

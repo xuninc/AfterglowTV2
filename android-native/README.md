@@ -25,6 +25,8 @@ This project is intentionally separate from the Capacitor proof-of-life app. The
 - SMB targets can be validated from the DVR screen with `TEST SMB`; blank username/password uses SMB guest authentication.
 - Direct HTTP streams are captured to `.ts`; HLS playlist streams are captured by appending media segments when the provider exposes normal segment playlists.
 - Manifest permissions are in place for foreground DVR recording and notifications on modern Android TV / Fire OS builds.
+- Due DVR jobs now run through `DvrRecordingService`, a foreground data-sync service that keeps capture work outside the Activity lifecycle and reports completion back to the DVR screen.
+- DVR recording requests notification permission on Android 13+ and holds a partial wake lock during active capture to reduce mid-recording sleep failures.
 - Android TV / Fire TV manifest support, including Leanback launcher and touch-optional hardware flags.
 
 ## Build
@@ -50,5 +52,5 @@ Core app should be direct-play only. Unsupported codecs should show a clear comp
 - Replace the simple native row list with a true time-grid guide.
 - Add SMB/WebDAV/NFS network-share support for local library scanning.
 - Persist parsed playlist, EPG, and library catalog in SQLite/Room instead of lightweight internal cache files.
-- Move long-running DVR capture into a foreground service with notifications/wake locks for store-ready unattended recording.
+- Move shared DVR serialization/recording helpers out of `MainActivity`/`DvrRecordingService` duplication into a small common Java utility package.
 - Add WebDAV/NFS credentialed DVR targets after the SMB2/SMB3 path is device-tested.

@@ -26,6 +26,11 @@
         android:theme="@style/AfterglowTheme"
         android:usesCleartextTraffic="true">
 
+        <service
+            android:name=".DvrRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
