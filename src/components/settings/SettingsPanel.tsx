@@ -6,14 +6,8 @@ import axios from 'axios';
 import { parseEPG } from '../../lib/epgParser';
 import { THEME_PRESETS } from '../../utils/theme';
 import { TRANSLATIONS, SupportedLanguage } from '../../utils/translations';
-
-const USER_AGENT_PRESETS = [
-  { label: 'VLC Media Player (High Acceptance)', value: 'VLC/3.0.18 LibVLC/3.0.18' },
-  { label: 'TiviMate AndroidTV (Recommended)', value: 'TiviMate/4.7.0 (Xiaomi MiTV-MSSP3; Android 9)' },
-  { label: 'Standard Chrome Browser Spoof', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36' },
-  { label: 'IPTV Smarters Agent', value: 'IPTVSmarters' },
-  { label: 'None (Default User-Agent)', value: '' }
-];
+import { apiUrl, isNativeRuntime } from '../../utils/api';
+import { DEFAULT_USER_AGENT, USER_AGENT_PRESETS } from '../../utils/userAgent';
 
 export const SettingsPanel: React.FC = () => {
   const playlists = useStore(state => state.playlists);
@@ -29,6 +23,8 @@ export const SettingsPanel: React.FC = () => {
   const setLanguage = useStore(state => state.setLanguage);
   const customUserAgent = useStore(state => state.customUserAgent);
   const setCustomUserAgent = useStore(state => state.setCustomUserAgent);
+  const serverUrl = useStore(state => state.serverUrl);
+  const setServerUrl = useStore(state => state.setServerUrl);
   const t = TRANSLATIONS[language];
 
   const isTitleCleaningEnabled = useStore(state => state.isTitleCleaningEnabled);
@@ -70,6 +66,8 @@ export const SettingsPanel: React.FC = () => {
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [syncMsg, setSyncMsg] = useState('');
+  const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
+  const [serverUrlFeedback, setServerUrlFeedback] = useState('');
   const [backupFeedback, setBackupFeedback] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({ type: 'idle', message: '' });
 
   // Manual EPG custom slots form state
@@ -97,6 +95,7 @@ export const SettingsPanel: React.FC = () => {
         timestamp: new Date().toISOString(),
         playlists: state.playlists,
         currentPlaylistId: state.currentPlaylistId,
+        epgData: state.epgData,
         dvrSchedule: state.dvrSchedule,
         dvrRecordings: state.dvrRecordings,
         mediaLibrary: state.mediaLibrary,
@@ -115,7 +114,8 @@ export const SettingsPanel: React.FC = () => {
         isPremium: state.isPremium,
         activeThemeId: state.activeThemeId,
         language: state.language,
-        serverUrl: state.serverUrl
+        serverUrl: state.serverUrl,
+        customUserAgent: state.customUserAgent
       };
 
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
@@ -172,6 +172,18 @@ export const SettingsPanel: React.FC = () => {
     setEpgFeedback('');
   }, [currentPlaylistId, currentPlaylist]);
 
+  useEffect(() => {
+    setServerUrlInput(serverUrl);
+  }, [serverUrl]);
+
+  const handleSaveServerUrl = () => {
+    const normalized = serverUrlInput.trim().replace(/\/+$/, '');
+    setServerUrl(normalized);
+    setServerUrlInput(normalized);
+    setServerUrlFeedback(normalized ? 'Backend gateway saved.' : 'Backend gateway cleared.');
+    setTimeout(() => setServerUrlFeedback(''), 3000);
+  };
+
   const handleAddPlaylist = () => {
     if (!newUrl) return;
     useStore.getState().addPlaylist({
@@ -205,7 +217,7 @@ export const SettingsPanel: React.FC = () => {
         return;
       }
 
-      const response = await axios.get(`/api/epg?url=${encodeURIComponent(customEpgUrl)}`);
+      const response = await axios.get(apiUrl(`/api/epg?url=${encodeURIComponent(customEpgUrl)}`));
       setEpgFeedback("Parsing XMLTV elements...");
       const parsed = parseEPG(response.data);
       
@@ -232,6 +244,56 @@ export const SettingsPanel: React.FC = () => {
           <div>
             <h2 className="text-2xl font-display font-black tracking-widest uppercase">SYNC.CONF // SYSTEMS</h2>
             <p className="text-xs font-mono text-white/40 uppercase tracking-widest">Adjust digital signals, portal accounts, and guide sync logs</p>
+          </div>
+        </div>
+
+        {/* Backend Gateway */}
+        <div className="bg-afterglow-card/40 border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
+          <h3 className="text-sm font-mono text-white/60 tracking-widest uppercase border-b border-white/5 pb-2 flex items-center gap-2">
+            <Database className="w-4 h-4 text-afterglow-primary" />
+            <span>BACKEND GATEWAY</span>
+            {isNativeRuntime() && <span className="text-[10px] bg-afterglow-primary/20 px-2 py-0.5 rounded-full text-afterglow-primary">TV APP</span>}
+          </h3>
+          <div className="grid md:grid-cols-[1fr_auto_auto] gap-3 items-end">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-mono text-white/35 uppercase tracking-widest">API SERVER ORIGIN</label>
+              <Focusable id="settings-backend-url" className="w-full">
+                <input
+                  type="text"
+                  value={serverUrlInput}
+                  onChange={(e) => setServerUrlInput(e.target.value)}
+                  onFocus={() => useStore.getState().setFocusedElement('settings-backend-url')}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveServerUrl()}
+                  placeholder="https://your-afterglow-backend.example.com"
+                  className="w-full bg-black/40 border border-white/5 rounded-xl p-3.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-afterglow-primary transition-colors"
+                />
+              </Focusable>
+            </div>
+            <Focusable id="settings-backend-save" className="w-full md:w-auto">
+              <button
+                onClick={handleSaveServerUrl}
+                className="w-full md:w-auto px-5 py-3.5 bg-afterglow-primary text-white rounded-xl font-mono text-[10px] font-bold tracking-widest uppercase hover:bg-white hover:text-black transition-colors"
+              >
+                SAVE
+              </button>
+            </Focusable>
+            <Focusable id="settings-backend-clear" className="w-full md:w-auto">
+              <button
+                onClick={() => {
+                  setServerUrlInput('');
+                  setServerUrl('');
+                  setServerUrlFeedback('Backend gateway cleared.');
+                  setTimeout(() => setServerUrlFeedback(''), 3000);
+                }}
+                className="w-full md:w-auto px-5 py-3.5 bg-white/5 text-white/50 rounded-xl font-mono text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 hover:text-white transition-colors"
+              >
+                CLEAR
+              </button>
+            </Focusable>
+          </div>
+          <div className="flex items-center justify-between gap-4 text-[10px] font-mono uppercase tracking-widest text-white/35">
+            <span>{serverUrl ? `ACTIVE: ${serverUrl}` : 'SAME-ORIGIN WEB MODE'}</span>
+            {serverUrlFeedback && <span className="text-afterglow-primary">{serverUrlFeedback}</span>}
           </div>
         </div>
 
@@ -477,16 +539,16 @@ export const SettingsPanel: React.FC = () => {
               <select
                 className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm font-light text-white focus:outline-none focus:border-afterglow-primary cursor-pointer"
                 value={
-                  USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || ''))
-                    ? (customUserAgent || '')
+                  USER_AGENT_PRESETS.some(p => p.value === customUserAgent)
+                    ? customUserAgent
                     : 'custom'
                 }
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === 'custom') {
-                    setCustomUserAgent('VLC/3.0.18 LibVLC/3.0.18');
+                    setCustomUserAgent(customUserAgent || DEFAULT_USER_AGENT);
                   } else {
-                    setCustomUserAgent(val || null);
+                    setCustomUserAgent(val);
                   }
                 }}
               >
@@ -499,15 +561,26 @@ export const SettingsPanel: React.FC = () => {
               </select>
             </div>
 
-            {(!USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || '')) || customUserAgent === 'custom') && (
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">ACTIVE USER-AGENT STRING</label>
+              <input
+                type="text"
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-afterglow-primary"
+                placeholder="e.g. VLC/3.0.18 LibVLC/3.0.18"
+                value={customUserAgent}
+                onChange={(e) => setCustomUserAgent(e.target.value || DEFAULT_USER_AGENT)}
+              />
+            </div>
+
+            {!USER_AGENT_PRESETS.some(p => p.value === customUserAgent) && (
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">CUSTOM BINDING STRING Override</label>
                 <input
                   type="text"
                   className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-afterglow-primary"
                   placeholder="e.g. MyCustomReceiver/3.2"
-                  value={customUserAgent || ''}
-                  onChange={(e) => setCustomUserAgent(e.target.value || null)}
+                  value={customUserAgent}
+                  onChange={(e) => setCustomUserAgent(e.target.value || DEFAULT_USER_AGENT)}
                 />
               </div>
             )}

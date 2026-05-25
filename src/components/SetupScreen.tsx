@@ -8,14 +8,8 @@ import { AfterglowLogo } from './common/AfterglowLogo';
 import { useStore } from '../store/useStore';
 import { parseEPG } from '../lib/epgParser';
 import { DEMO_PLAYLIST } from '../data/demoData';
-
-const USER_AGENT_PRESETS = [
-  { label: 'VLC Media Player (High Acceptance)', value: 'VLC/3.0.18 LibVLC/3.0.18' },
-  { label: 'TiviMate AndroidTV (Recommended)', value: 'TiviMate/4.7.0 (Xiaomi MiTV-MSSP3; Android 9)' },
-  { label: 'Standard Chrome Browser Spoof', value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36' },
-  { label: 'IPTV Smarters Agent', value: 'IPTVSmarters' },
-  { label: 'None (Default User-Agent)', value: '' }
-];
+import { apiUrl } from '../utils/api';
+import { DEFAULT_USER_AGENT, USER_AGENT_PRESETS } from '../utils/userAgent';
 
 type SelectionTab = 'm3u' | 'xtream' | 'stalker' | 'demo';
 
@@ -205,7 +199,7 @@ export const SetupScreen: React.FC = () => {
           if (epgUrl) {
             let epgQuery = `/api/epg?url=${encodeURIComponent(epgUrl)}`;
             if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
-            axios.get(epgQuery)
+            axios.get(apiUrl(epgQuery))
               .then(res => {
                 const parsed = parseEPG(res.data);
                 useStore.getState().setEpgData(parsed);
@@ -220,13 +214,13 @@ export const SetupScreen: React.FC = () => {
           }
           let playlistQuery = `/api/playlist?url=${encodeURIComponent(url)}`;
           if (customUserAgent) playlistQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
-          const response = await axios.get(playlistQuery);
+          const response = await axios.get(apiUrl(playlistQuery));
           registerPlaylist(response.data, "Glow M3U Broadcast", url, epgUrl);
 
           if (epgUrl) {
             let epgQuery = `/api/epg?url=${encodeURIComponent(epgUrl)}`;
             if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
-            axios.get(epgQuery)
+            axios.get(apiUrl(epgQuery))
               .then(res => {
                 const parsed = parseEPG(res.data);
                 useStore.getState().setEpgData(parsed);
@@ -249,13 +243,13 @@ export const SetupScreen: React.FC = () => {
         
         let playlistQuery = `/api/playlist?url=${encodeURIComponent(convertedM3uUrl)}`;
         if (customUserAgent) playlistQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
-        const response = await axios.get(playlistQuery);
+        const response = await axios.get(apiUrl(playlistQuery));
         registerPlaylist(response.data, `Xtream (${xtreamUser})`, convertedM3uUrl, convertedEpgUrl);
 
         // Fetch EPG in background
         let epgQuery = `/api/epg?url=${encodeURIComponent(convertedEpgUrl)}`;
         if (customUserAgent) epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
-        axios.get(epgQuery)
+        axios.get(apiUrl(epgQuery))
           .then(res => {
             const parsed = parseEPG(res.data);
             useStore.getState().setEpgData(parsed);
@@ -270,7 +264,7 @@ export const SetupScreen: React.FC = () => {
         }
         
         try {
-          const response = await axios.get(`/api/stalker?portalUrl=${encodeURIComponent(stalkerHost)}&mac=${encodeURIComponent(stalkerMac)}`);
+          const response = await axios.get(apiUrl(`/api/stalker?portalUrl=${encodeURIComponent(stalkerHost)}&mac=${encodeURIComponent(stalkerMac)}`));
           registerPlaylist(response.data, `Stalker Portal (${stalkerMac})`, stalkerHost);
         } catch (stkErr: any) {
           // If real stalker fails due to firewall/access registration (very common), offer FALLBACK to premium test channels
@@ -594,16 +588,16 @@ export const SetupScreen: React.FC = () => {
                   <select
                     className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[11px] font-light text-white focus:outline-none focus:border-afterglow-primary cursor-pointer"
                     value={
-                      USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || ''))
-                        ? (customUserAgent || '')
+                      USER_AGENT_PRESETS.some(p => p.value === customUserAgent)
+                        ? customUserAgent
                         : 'custom'
                     }
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === 'custom') {
-                        setCustomUserAgent('VLC/3.0.18 LibVLC/3.0.18');
+                        setCustomUserAgent(customUserAgent || DEFAULT_USER_AGENT);
                       } else {
-                        setCustomUserAgent(val || null);
+                        setCustomUserAgent(val);
                       }
                     }}
                   >
@@ -616,15 +610,15 @@ export const SetupScreen: React.FC = () => {
                   </select>
                 </div>
 
-                {(!USER_AGENT_PRESETS.some(p => p.value === (customUserAgent || '')) || customUserAgent === 'custom') && (
+                {!USER_AGENT_PRESETS.some(p => p.value === customUserAgent) && (
                   <div className="flex flex-col gap-1">
                     <label className="text-[8px] font-mono text-white/40 uppercase tracking-widest pl-1">CUSTOM BINDING STRING</label>
                     <input
                       type="text"
                       className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-[11px] font-mono text-white focus:outline-none focus:border-afterglow-primary"
                       placeholder="e.g. MyCustomPlayer/1.0"
-                      value={customUserAgent || ''}
-                      onChange={(e) => setCustomUserAgent(e.target.value || null)}
+                      value={customUserAgent}
+                      onChange={(e) => setCustomUserAgent(e.target.value || DEFAULT_USER_AGENT)}
                     />
                   </div>
                 )}

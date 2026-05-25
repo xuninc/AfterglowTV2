@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="afterglow_black">#060509</color>
+    <color name="afterglow_panel">#121018</color>
+    <color name="afterglow_panel_soft">#1B1622</color>
+    <color name="afterglow_primary">#FF3E00</color>
+    <color name="afterglow_pink">#FF4E88</color>
+    <color name="afterglow_text">#F5F2F0</color>
+</resources>

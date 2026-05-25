@@ -5,6 +5,7 @@ import { useStore, Channel } from '../../store/useStore';
 import { DEMO_VOD_MOVIES } from '../../data/demoData';
 import { classifyVODChannel, cleanMediaTitle } from '../../utils/vodClassifier';
 import { MarqueeText } from '../common/MarqueeText';
+import { apiUrl } from '../../utils/api';
 
 export const VODGrid: React.FC = () => {
   const currentPlaylistId = useStore(state => state.currentPlaylistId);
@@ -62,7 +63,7 @@ export const VODGrid: React.FC = () => {
 
       setAiProgress(`Consulting Google Gemini AI to analyze ${titles.length} movies...`);
 
-      const response = await fetch('/api/vod/classify', {
+      const response = await fetch(apiUrl('/api/vod/classify'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -152,7 +153,7 @@ export const VODGrid: React.FC = () => {
 
       try {
         console.log(`[Plex AI Background Enricher] Automatically analyzing ${titles.length} movies...`);
-        const response = await fetch('/api/vod/classify', {
+        const response = await fetch(apiUrl('/api/vod/classify'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

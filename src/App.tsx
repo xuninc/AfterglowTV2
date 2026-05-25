@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LayoutGrid, Play, Settings, Tv, Disc, Menu, Layers, Sparkles, Clock, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from './store/useStore';
@@ -21,9 +21,12 @@ import { applyThemePreset } from './utils/theme';
 import { AfterglowLogo } from './components/common/AfterglowLogo';
 import { StylizedLogo } from './components/common/StylizedLogo';
 import { TRANSLATIONS } from './utils/translations';
+import { parseEPG } from './lib/epgParser';
+import { apiUrl } from './utils/api';
 
 export default function App() {
   const playlists = useStore(state => state.playlists);
+  const currentPlaylistId = useStore(state => state.currentPlaylistId);
   const currentChannel = useStore(state => state.currentChannel);
   const isSidebarOpen = useStore(state => state.isSidebarOpen);
   const toggleSidebar = useStore(state => state.toggleSidebar);
@@ -36,10 +39,14 @@ export default function App() {
   const isPremium = useStore(state => state.isPremium);
   const activeThemeId = useStore(state => state.activeThemeId);
   const language = useStore(state => state.language);
+  const epgData = useStore(state => state.epgData);
+  const customUserAgent = useStore(state => state.customUserAgent);
+  const setEpgData = useStore(state => state.setEpgData);
 
   const t = TRANSLATIONS[language];
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const epgSyncInFlight = useRef<string | null>(null);
 
   useEffect(() => {
     applyThemePreset(activeThemeId);
@@ -48,6 +55,46 @@ export default function App() {
   useTVNavigation();
 
   const hasPlaylists = playlists.length > 0;
+  const currentPlaylist = playlists.find(playlist => playlist.id === currentPlaylistId) || playlists[0];
+
+  useEffect(() => {
+    if (!currentPlaylist?.epgUrl) return;
+    if (Object.keys(epgData).length > 0) return;
+    if (epgSyncInFlight.current === currentPlaylist.id) return;
+
+    const controller = new AbortController();
+    epgSyncInFlight.current = currentPlaylist.id;
+
+    const syncEpg = async () => {
+      try {
+        let epgQuery = `/api/epg?url=${encodeURIComponent(currentPlaylist.epgUrl || '')}`;
+        if (customUserAgent) {
+          epgQuery += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+        }
+
+        const response = await fetch(apiUrl(epgQuery), { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`EPG request failed with ${response.status}`);
+        }
+
+        const xml = await response.text();
+        const parsed = parseEPG(xml);
+        setEpgData(parsed);
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.warn('Automatic EPG refresh failed:', error.message);
+        }
+      } finally {
+        if (epgSyncInFlight.current === currentPlaylist.id) {
+          epgSyncInFlight.current = null;
+        }
+      }
+    };
+
+    syncEpg();
+
+    return () => controller.abort();
+  }, [currentPlaylist?.id, currentPlaylist?.epgUrl, customUserAgent, epgData, setEpgData]);
 
   // Compute trial status
   const start = new Date(trialStartDate);

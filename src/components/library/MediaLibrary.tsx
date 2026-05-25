@@ -8,6 +8,7 @@ import { MediaMetadata } from '../../types/media';
 import { Focusable } from '../common/Focusable';
 import { useMediaLibraryScanner } from '../../hooks/useMediaLibraryScanner';
 import { calculateMiniLMSimilarity, performLocalOnDeviceMatch, LOCAL_METADATA_INDEX } from '../../utils/localMetadataDatabase';
+import { apiUrl } from '../../utils/api';
 
 export const MediaLibrary: React.FC = () => {
   const mediaLibrary = useStore(state => state.mediaLibrary);
@@ -63,7 +64,7 @@ export const MediaLibrary: React.FC = () => {
     setFolderNotification({ message: `Initiating directory monitor on ${folder.path}...`, type: 'info' });
     
     try {
-      const response = await fetch("/api/library/scan", {
+      const response = await fetch(apiUrl("/api/library/scan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paths: [folder.path], simulate: true }) // simulate fallback for sandboxed environments

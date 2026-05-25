@@ -6,6 +6,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import fs from "fs";
+import { spawn } from "child_process";
+import { DEFAULT_USER_AGENT } from "./src/utils/userAgent";
 
 // Helper to check if a file has a video extension
 function isVideoFile(filename: string): boolean {
@@ -95,6 +97,22 @@ async function startServer() {
 
   app.use(express.json());
 
+  const resolveUserAgent = (userAgent: unknown) => typeof userAgent === "string" && userAgent.trim()
+    ? userAgent.trim()
+    : DEFAULT_USER_AGENT;
+
+  const setMediaCorsHeaders = (res: express.Response) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept, Origin, User-Agent");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, Content-Type");
+  };
+
+  app.options(["/api/stream-proxy", "/api/transcode-stream"], (_req, res) => {
+    setMediaCorsHeaders(res);
+    res.sendStatus(204);
+  });
+
   // Fallback M3U Parser in case standard parsers miss non-conforming lines or throw errors
   function parseM3uFallback(m3uText: string): any {
     const items: any[] = [];
@@ -167,9 +185,7 @@ async function startServer() {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    const resolvedUserAgent = typeof userAgent === "string" && userAgent
-      ? userAgent
-      : "VLC/3.0.18 LibVLC/3.0.18";
+    const resolvedUserAgent = resolveUserAgent(userAgent);
 
     try {
       const response = await axios.get(url, {
@@ -222,9 +238,7 @@ async function startServer() {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    const resolvedUserAgent = typeof userAgent === "string" && userAgent
-      ? userAgent
-      : "VLC/3.0.18 LibVLC/3.0.18";
+    const resolvedUserAgent = resolveUserAgent(userAgent);
 
     try {
       const response = await axios.get(url, {
@@ -434,9 +448,7 @@ ${JSON.stringify(titles)}`;
       return res.status(400).send("URL parameter is required");
     }
 
-    const resolvedUserAgent = typeof userAgent === "string" && userAgent
-      ? userAgent
-      : "VLC/3.0.18 LibVLC/3.0.18";
+    const resolvedUserAgent = resolveUserAgent(userAgent);
 
     try {
       const decodedUrl = decodeURIComponent(url);
@@ -446,65 +458,71 @@ ${JSON.stringify(titles)}`;
         "Accept": "*/*",
       };
 
-      // Handle common m3u8 headers or standard chunk requests
-      const isM3u8 = decodedUrl.toLowerCase().includes(".m3u8") || 
-                     decodedUrl.toLowerCase().includes("m3u8");
+      if (typeof req.headers.range === "string") {
+        headers.Range = req.headers.range;
+      }
 
-      if (isM3u8) {
-        // Fetch as text to rewrite URLs so child streams and chunks are proxied as well
+      const buildProxyUri = (targetUrl: string) => {
+        let proxiedUri = `/api/stream-proxy?url=${encodeURIComponent(targetUrl)}`;
+        if (resolvedUserAgent) {
+          proxiedUri += `&userAgent=${encodeURIComponent(resolvedUserAgent)}`;
+        }
+        return proxiedUri;
+      };
+
+      const rewriteManifest = (manifestText: string, sourceUrl: string) => {
+        const lines = manifestText.split(/\r?\n/);
+        return lines.map((line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+
+          if (trimmed.startsWith("#")) {
+            return line.replace(/URI="([^"]+)"/g, (_match, originalUri) => {
+              try {
+                const absoluteUri = new URL(originalUri, sourceUrl).href;
+                return `URI="${buildProxyUri(absoluteUri)}"`;
+              } catch (e) {
+                return `URI="${originalUri}"`;
+              }
+            });
+          }
+
+          try {
+            const absoluteUrl = new URL(trimmed, sourceUrl).href;
+            return buildProxyUri(absoluteUrl);
+          } catch (e) {
+            return line;
+          }
+        }).join("\n");
+      };
+
+      const sendManifestResponse = (manifestText: string, sourceUrl: string, statusCode = 200) => {
+        res.status(statusCode);
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        setMediaCorsHeaders(res);
+        return res.send(rewriteManifest(manifestText, sourceUrl));
+      };
+
+      const lowerDecodedUrl = decodedUrl.toLowerCase();
+      const looksLikeManifestUrl = lowerDecodedUrl.includes(".m3u8") ||
+                                   lowerDecodedUrl.includes(".m3u") ||
+                                   lowerDecodedUrl.includes("m3u8") ||
+                                   lowerDecodedUrl.includes("m3u_plus") ||
+                                   lowerDecodedUrl.includes("output=m3u");
+
+      if (looksLikeManifestUrl) {
+        // Fetch as text to rewrite URLs so child streams and chunks are proxied as well.
         const textResponse = await axios.get(decodedUrl, {
           headers,
           timeout: 10005,
           responseType: "text",
+          transformResponse: (data) => data,
         });
-
-        const lines = textResponse.data.split(/\r?\n/);
-        const outputLines = lines.map((line: string) => {
-          const trimmed = line.trim();
-          if (!trimmed) return line;
-
-          // If line starts with '#', check if there is an embedded URI to rewrite (e.g., encryption keys or sub-playlists)
-          if (trimmed.startsWith("#")) {
-            let updatedLine = line;
-            // Match URI="http://..." or URI="something.m3u8"
-            const uriMatches = line.match(/URI="([^"]+)"/);
-            if (uriMatches) {
-              const originalUri = uriMatches[1];
-              try {
-                const absoluteUri = new URL(originalUri, decodedUrl).href;
-                let proxiedUri = `/api/stream-proxy?url=${encodeURIComponent(absoluteUri)}`;
-                if (resolvedUserAgent) {
-                  proxiedUri += `&userAgent=${encodeURIComponent(resolvedUserAgent)}`;
-                }
-                updatedLine = line.replace(`URI="${originalUri}"`, `URI="${proxiedUri}"`);
-              } catch (e) {
-                // Ignore invalid URLs
-              }
-            }
-            return updatedLine;
-          }
-
-          // If the line is a relative/absolute stream or segment URL
-          try {
-            const absoluteUrl = new URL(trimmed, decodedUrl).href;
-            let proxiedUri = `/api/stream-proxy?url=${encodeURIComponent(absoluteUrl)}`;
-            if (resolvedUserAgent) {
-              proxiedUri += `&userAgent=${encodeURIComponent(resolvedUserAgent)}`;
-            }
-            return proxiedUri;
-          } catch (e) {
-            return line;
-          }
-        });
-
-        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "*");
-        return res.send(outputLines.join("\n"));
+        return sendManifestResponse(String(textResponse.data), decodedUrl, textResponse.status);
       }
 
-      // Otherwise it is a binary chunk (.ts), license key, etc. Stream/Pipe directly.
+      // Otherwise stream, but sniff extensionless endpoints because many IPTV providers
+      // return HLS manifests from URLs with no .m3u/.m3u8 suffix.
       const response = await axios({
         method: "get",
         url: decodedUrl,
@@ -514,22 +532,174 @@ ${JSON.stringify(titles)}`;
         validateStatus: () => true,
       });
 
-      res.status(response.status);
-      const contentType = response.headers["content-type"];
-      if (contentType && typeof contentType === "string") {
-        res.setHeader("Content-Type", contentType);
-      }
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "*");
-      
-      response.data.pipe(res);
+      const upstreamStream = response.data;
+      const upstreamContentType = typeof response.headers["content-type"] === "string"
+        ? response.headers["content-type"] as string
+        : "";
+      let handledFirstChunk = false;
+
+      const sendBinaryHeaders = () => {
+        res.status(response.status);
+        if (upstreamContentType) {
+          res.setHeader("Content-Type", upstreamContentType);
+        }
+        const passThroughHeaders = ["content-length", "content-range", "accept-ranges", "cache-control"];
+        passThroughHeaders.forEach((headerName) => {
+          const headerValue = response.headers[headerName];
+          if (typeof headerValue === "string") {
+            res.setHeader(headerName, headerValue);
+          }
+        });
+        setMediaCorsHeaders(res);
+      };
+
+      upstreamStream.pause();
+      upstreamStream.once("data", (chunk: Buffer | string) => {
+        handledFirstChunk = true;
+        upstreamStream.pause();
+
+        const firstBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const firstText = firstBuffer.toString("utf8", 0, Math.min(firstBuffer.length, 2048));
+        const contentTypeLower = upstreamContentType.toLowerCase();
+        const looksLikeManifestBody = firstText.trimStart().startsWith("#EXTM3U") ||
+                                      contentTypeLower.includes("mpegurl") ||
+                                      contentTypeLower.includes("m3u");
+
+        if (looksLikeManifestBody) {
+          const chunks: Buffer[] = [firstBuffer];
+          upstreamStream.on("data", (nextChunk: Buffer | string) => {
+            chunks.push(Buffer.isBuffer(nextChunk) ? nextChunk : Buffer.from(nextChunk));
+          });
+          upstreamStream.once("end", () => {
+            if (res.writableEnded) return;
+            const manifestText = Buffer.concat(chunks).toString("utf8");
+            sendManifestResponse(manifestText, decodedUrl, response.status);
+          });
+          upstreamStream.once("error", (streamErr: any) => {
+            if (!res.headersSent) {
+              res.status(502).send(`Stream proxy failed: ${streamErr.message}`);
+            }
+          });
+          upstreamStream.resume();
+          return;
+        }
+
+        sendBinaryHeaders();
+        res.write(firstBuffer);
+        upstreamStream.pipe(res);
+        upstreamStream.resume();
+      });
+
+      upstreamStream.once("end", () => {
+        if (!handledFirstChunk && !res.headersSent) {
+          sendBinaryHeaders();
+          res.end();
+        }
+      });
+
+      upstreamStream.once("error", (streamErr: any) => {
+        if (streamErr.message !== "aborted") {
+          console.warn("Stream proxy upstream error:", streamErr.message);
+        }
+        if (!res.headersSent) {
+          res.status(502).send(`Stream proxy failed: ${streamErr.message}`);
+        }
+      });
+
+      upstreamStream.resume();
     } catch (err: any) {
       console.warn("Stream proxy exception:", err.message);
       if (!res.headersSent) {
         res.status(502).send(`Stream proxy failed: ${err.message}`);
       }
     }
+  });
+
+  app.get("/api/transcode-stream", (req, res) => {
+    const { url, userAgent, audio } = req.query;
+    if (!url || typeof url !== "string") {
+      return res.status(400).send("URL parameter is required");
+    }
+
+    const resolvedUserAgent = resolveUserAgent(userAgent);
+    const decodedUrl = decodeURIComponent(url);
+    const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
+    const includeAudio = audio !== "0";
+
+    setMediaCorsHeaders(res);
+    res.status(200);
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Cache-Control", "no-store");
+
+    const args = [
+      "-hide_banner",
+      "-loglevel", "warning",
+      "-fflags", "+genpts",
+      "-reconnect", "1",
+      "-reconnect_streamed", "1",
+      "-reconnect_delay_max", "2",
+      "-user_agent", resolvedUserAgent,
+      "-headers", `User-Agent: ${resolvedUserAgent}\r\nAccept: */*\r\n`,
+      "-analyzeduration", "2000000",
+      "-probesize", "2000000",
+      "-i", decodedUrl,
+      "-map", "0:v:0?",
+      ...(includeAudio ? ["-map", "0:a:0?"] : ["-an"]),
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-pix_fmt", "yuv420p",
+      "-profile:v", "main",
+      "-g", "60",
+      "-keyint_min", "60",
+      "-sc_threshold", "0",
+      ...(includeAudio ? ["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k"] : []),
+      "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+      "-avoid_negative_ts", "make_zero",
+      "-f", "mp4",
+      "pipe:1",
+    ];
+
+    const ffmpeg = spawn(ffmpegPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stopped = false;
+
+    const stopTranscode = () => {
+      if (stopped) return;
+      stopped = true;
+      if (!ffmpeg.killed) {
+        ffmpeg.kill("SIGKILL");
+      }
+    };
+
+    req.on("close", stopTranscode);
+    res.on("close", stopTranscode);
+
+    ffmpeg.stdout.pipe(res);
+
+    ffmpeg.stderr.on("data", (chunk) => {
+      const message = chunk.toString().trim();
+      if (message) {
+        console.warn("FFmpeg transcode:", message);
+      }
+    });
+
+    ffmpeg.once("error", (error) => {
+      console.warn("FFmpeg transcode failed:", error.message);
+      if (!res.headersSent) {
+        res.status(500).send(`Transcode failed: ${error.message}`);
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    });
+
+    ffmpeg.once("close", (code, signal) => {
+      if (!stopped && code !== 0) {
+        console.warn(`FFmpeg transcode exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}`);
+      }
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
   });
 
   if (process.env.NODE_ENV !== "production") {

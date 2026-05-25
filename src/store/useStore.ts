@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MediaMetadata } from '../types/media';
 import { SupportedLanguage } from '../utils/translations';
+import { DEFAULT_USER_AGENT, normalizeUserAgent } from '../utils/userAgent';
 
 export interface EpgInjectSlot {
   id: string;
@@ -101,7 +102,7 @@ interface AppState {
   activeThemeId: string;
   language: SupportedLanguage;
   serverUrl: string;
-  customUserAgent: string | null;
+  customUserAgent: string;
   
   // Actions
   addPlaylist: (playlist: Playlist) => void;
@@ -166,6 +167,7 @@ export interface AfterglowBackup {
   timestamp: string;
   playlists?: Playlist[];
   currentPlaylistId?: string | null;
+  epgData?: Record<string, any[]>;
   dvrSchedule?: DVRJob[];
   dvrRecordings?: DVRRecording[];
   mediaLibrary?: MediaMetadata[];
@@ -185,6 +187,7 @@ export interface AfterglowBackup {
   activeThemeId?: string;
   language?: SupportedLanguage;
   serverUrl?: string;
+  customUserAgent?: string | null;
 }
 
 // Help loading initial localStorage values
@@ -205,6 +208,23 @@ const saveLocalStorage = (key: string, value: any) => {
   }
 };
 
+const getDefaultServerUrl = () => {
+  const envServerUrl = import.meta.env.VITE_AFTERGLOW_BACKEND_URL || '';
+  if (envServerUrl) return envServerUrl;
+
+  if (
+    typeof window !== 'undefined' &&
+    window.location &&
+    window.location.origin &&
+    !window.location.origin.includes('localhost') &&
+    !window.location.origin.includes('127.0.0.1')
+  ) {
+    return window.location.origin;
+  }
+
+  return '';
+};
+
 export const useStore = create<AppState>((set, get) => ({
   playlists: loadLocalStorage<Playlist[]>('glow_playlists', []),
   currentPlaylistId: loadLocalStorage<string | null>('glow_current_playlist_id', null),
@@ -212,7 +232,7 @@ export const useStore = create<AppState>((set, get) => ({
   isSidebarOpen: false,
   focusedElementId: null,
   preFetchUrl: null,
-  epgData: {},
+  epgData: loadLocalStorage<Record<string, any[]>>('glow_epg_data', {}),
   activeView: 'guide',
   activeCategory: 'All',
   
@@ -242,8 +262,8 @@ export const useStore = create<AppState>((set, get) => ({
   // Theme State
   activeThemeId: loadLocalStorage<string>('glow_active_theme_id', 'afterglow-original'),
   language: loadLocalStorage<SupportedLanguage>('glow_language', 'en'),
-  serverUrl: loadLocalStorage<string>('glow_server_url', typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') ? window.location.origin : ''),
-  customUserAgent: loadLocalStorage<string | null>('glow_custom_user_agent', null),
+  serverUrl: loadLocalStorage<string>('glow_server_url', getDefaultServerUrl()),
+  customUserAgent: normalizeUserAgent(loadLocalStorage<string | null>('glow_custom_user_agent', DEFAULT_USER_AGENT)),
   
   dvrSchedule: loadLocalStorage<DVRJob[]>('glow_dvr_schedule', [
     {
@@ -320,7 +340,10 @@ export const useStore = create<AppState>((set, get) => ({
   
   setFocusedElement: (id) => set({ focusedElementId: id }),
   setPreFetchUrl: (url) => set({ preFetchUrl: url }),
-  setEpgData: (data) => set({ epgData: data }),
+  setEpgData: (data) => {
+    saveLocalStorage('glow_epg_data', data);
+    set({ epgData: data });
+  },
   
   setActiveView: (view) => set({ activeView: view }),
   setActiveCategory: (category) => set({ activeCategory: category }),
@@ -477,8 +500,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setCustomUserAgent: (ua) => {
-    saveLocalStorage('glow_custom_user_agent', ua);
-    set({ customUserAgent: ua });
+    const normalizedUserAgent = normalizeUserAgent(ua);
+    saveLocalStorage('glow_custom_user_agent', normalizedUserAgent);
+    set({ customUserAgent: normalizedUserAgent });
   },
 
   scheduleRecording: (newItem) => set((state) => {
@@ -542,6 +566,7 @@ export const useStore = create<AppState>((set, get) => ({
   resetAll: () => {
     localStorage.removeItem('glow_playlists');
     localStorage.removeItem('glow_current_playlist_id');
+    localStorage.removeItem('glow_epg_data');
     localStorage.removeItem('glow_dvr_schedule');
     localStorage.removeItem('glow_dvr_recordings');
     localStorage.removeItem('glow_media_library');
@@ -557,6 +582,7 @@ export const useStore = create<AppState>((set, get) => ({
     localStorage.removeItem('glow_active_theme_id');
     localStorage.removeItem('glow_language');
     localStorage.removeItem('glow_server_url');
+    localStorage.removeItem('glow_custom_user_agent');
     set({
       playlists: [],
       currentPlaylistId: null,
@@ -581,13 +607,15 @@ export const useStore = create<AppState>((set, get) => ({
       epgInjectAlgoDensity: 30,
       activeThemeId: 'afterglow-original',
       language: 'en',
-      serverUrl: ''
+      serverUrl: '',
+      customUserAgent: DEFAULT_USER_AGENT
     });
   },
 
   importBackup: (backup) => set((state) => {
     if (backup.playlists !== undefined) saveLocalStorage('glow_playlists', backup.playlists);
     if (backup.currentPlaylistId !== undefined) saveLocalStorage('glow_current_playlist_id', backup.currentPlaylistId);
+    if (backup.epgData !== undefined) saveLocalStorage('glow_epg_data', backup.epgData);
     if (backup.dvrSchedule !== undefined) saveLocalStorage('glow_dvr_schedule', backup.dvrSchedule);
     if (backup.dvrRecordings !== undefined) saveLocalStorage('glow_dvr_recordings', backup.dvrRecordings);
     if (backup.mediaLibrary !== undefined) saveLocalStorage('glow_media_library', backup.mediaLibrary);
@@ -607,11 +635,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (backup.activeThemeId !== undefined) saveLocalStorage('glow_active_theme_id', backup.activeThemeId);
     if (backup.language !== undefined) saveLocalStorage('glow_language', backup.language);
     if (backup.serverUrl !== undefined) saveLocalStorage('glow_server_url', backup.serverUrl);
+    if (backup.customUserAgent !== undefined) saveLocalStorage('glow_custom_user_agent', normalizeUserAgent(backup.customUserAgent));
 
     return {
       playlists: backup.playlists !== undefined ? backup.playlists : state.playlists,
       currentPlaylistId: backup.currentPlaylistId !== undefined ? backup.currentPlaylistId : state.currentPlaylistId,
       currentChannel: null,
+      epgData: backup.epgData !== undefined ? backup.epgData : state.epgData,
       dvrSchedule: backup.dvrSchedule !== undefined ? backup.dvrSchedule : state.dvrSchedule,
       dvrRecordings: backup.dvrRecordings !== undefined ? backup.dvrRecordings : state.dvrRecordings,
       mediaLibrary: backup.mediaLibrary !== undefined ? backup.mediaLibrary : state.mediaLibrary,
@@ -631,8 +661,8 @@ export const useStore = create<AppState>((set, get) => ({
       activeThemeId: backup.activeThemeId !== undefined ? backup.activeThemeId : state.activeThemeId,
       language: backup.language !== undefined ? backup.language : state.language,
       serverUrl: backup.serverUrl !== undefined ? backup.serverUrl : state.serverUrl,
-      activeCategory: 'All',
-      epgData: {}
+      customUserAgent: backup.customUserAgent !== undefined ? normalizeUserAgent(backup.customUserAgent) : state.customUserAgent,
+      activeCategory: 'All'
     };
   })
 }));

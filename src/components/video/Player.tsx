@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import Hls from 'hls.js';
+import mpegts from 'mpegts.js';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertCircle, RefreshCw, EyeOff, ShieldAlert, Sparkles, Database, Tv, Cpu, ArrowUpRight } from 'lucide-react';
 import { useStore } from '../../store/useStore';
@@ -7,15 +8,55 @@ import { Focusable } from '../common/Focusable';
 import { DEMO_LIVE_CHANNELS } from '../../data/demoData';
 import { generateMockProgramsForChannel } from '../../utils/epgGenerator';
 import { parseMediaTitle, calculateMiniLMSimilarity } from '../../utils/localMetadataDatabase';
+import { apiUrl } from '../../utils/api';
 
 interface PlayerProps {
   url: string;
 }
 
+type PlaybackMode = 'auto' | 'hls' | 'mpegts' | 'native' | 'transcoded';
+
+const makeAbsolutePlaybackUrl = (streamUrl: string) => {
+  if (!streamUrl || streamUrl.startsWith('http://') || streamUrl.startsWith('https://') || streamUrl.startsWith('blob:') || streamUrl.startsWith('data:')) {
+    return streamUrl;
+  }
+
+  if (typeof window === 'undefined') {
+    return streamUrl;
+  }
+
+  return new URL(streamUrl, window.location.origin).href;
+};
+
+const safelyDestroyMpegtsPlayer = (player: ReturnType<typeof mpegts.createPlayer> | null) => {
+  if (!player) return;
+
+  try {
+    player.pause();
+    player.unload();
+    player.detachMediaElement();
+  } catch (error) {
+    // Some failed worker initializations leave mpegts internals partially constructed.
+  }
+
+  try {
+    player.destroy();
+  } catch (error) {
+    console.warn('Ignoring MPEG-TS cleanup issue:', error);
+  }
+};
+
+const resetVideoElement = (video: HTMLVideoElement) => {
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+};
+
 export const Player: React.FC<PlayerProps> = ({ url }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const mpegtsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
   const preFetchHlsRef = useRef<Hls | null>(null);
   
   const preFetchUrl = useStore(state => state.preFetchUrl);
@@ -29,17 +70,21 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [forcedFallbackUrl, setForcedFallbackUrl] = useState<string | null>(null);
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('auto');
+  const [disableStreamAudio, setDisableStreamAudio] = useState(false);
 
   // Session override for the current channel playback
   const [userBypassedVault, setUserBypassedVault] = useState(false);
 
-  // Clear session override when tuning to a different channel
+  // Clear session override when tuning to a different channel or sender identity
   useEffect(() => {
     setUserBypassedVault(false);
     setIsUsingFallback(false);
     setPlayerError(null);
     setForcedFallbackUrl(null);
-  }, [url]);
+    setPlaybackMode('auto');
+    setDisableStreamAudio(false);
+  }, [url, customUserAgent]);
 
   // 1. Vault Sub-In Matches Engine
   const vaultMatch = useMemo(() => {
@@ -144,11 +189,26 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
     }
 
     // Bypass CORS and Mixed Content policies dynamically
-    let proxyUrl = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}`;
+    let proxyPath = `/api/stream-proxy?url=${encodeURIComponent(streamUrl)}`;
     if (customUserAgent) {
-      proxyUrl += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+      proxyPath += `&userAgent=${encodeURIComponent(customUserAgent)}`;
     }
-    return proxyUrl;
+    return apiUrl(proxyPath);
+  };
+
+  const getTranscodeRoute = (streamUrl: string) => {
+    if (!streamUrl || streamUrl.startsWith('blob:') || streamUrl.startsWith('data:')) {
+      return streamUrl;
+    }
+
+    let transcodePath = `/api/transcode-stream?url=${encodeURIComponent(streamUrl)}`;
+    if (customUserAgent) {
+      transcodePath += `&userAgent=${encodeURIComponent(customUserAgent)}`;
+    }
+    if (disableStreamAudio) {
+      transcodePath += '&audio=0';
+    }
+    return apiUrl(transcodePath);
   };
 
   const rawActiveUrl = forcedFallbackUrl
@@ -161,9 +221,30 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
     return getProxyRouteIfNeeded(rawActiveUrl);
   }, [rawActiveUrl, customUserAgent]);
 
+  const selectedPlaybackUrl = useMemo(() => {
+    return playbackMode === 'transcoded'
+      ? getTranscodeRoute(rawActiveUrl)
+      : currentActiveUrl;
+  }, [playbackMode, rawActiveUrl, currentActiveUrl, customUserAgent, disableStreamAudio]);
+
+  const playbackUrl = useMemo(() => makeAbsolutePlaybackUrl(selectedPlaybackUrl), [selectedPlaybackUrl]);
+
+  const isNativeMediaUrl = (streamUrl: string) => {
+    return /\.(mp4|m4v|webm|mov)(\?|#|$)/i.test(streamUrl);
+  };
+
+  const isMpegTsUrl = (streamUrl: string) => {
+    return /\.(ts|m2ts|mpegts)(\?|#|$)/i.test(streamUrl);
+  };
+
+  const isHlsManifestUrl = (streamUrl: string) => {
+    const lower = streamUrl.toLowerCase();
+    return /\.(m3u8?|m3u_plus)(\?|#|$)/i.test(lower) || lower.includes('output=m3u');
+  };
+
   // Pre-fetching Logic (Neural Warm-up) - Debounced
   useEffect(() => {
-    if (!preFetchUrl || preFetchUrl === currentActiveUrl) return;
+    if (!preFetchUrl || preFetchUrl === currentActiveUrl || !isHlsManifestUrl(preFetchUrl)) return;
 
     const timer = setTimeout(() => {
       if (Hls.isSupported()) {
@@ -172,11 +253,12 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
         }
         
         try {
+          const proxiedPreFetchUrl = makeAbsolutePlaybackUrl(getProxyRouteIfNeeded(preFetchUrl));
           const preHls = new Hls({
             capLevelToPlayerSize: true,
             startLevel: 0,
           });
-          preHls.loadSource(preFetchUrl);
+          preHls.loadSource(proxiedPreFetchUrl);
           preFetchHlsRef.current = preHls;
           console.log("Neural Warm-up FINALIZED for:", preFetchUrl);
         } catch (e) {
@@ -191,14 +273,32 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
   // Main stream loader loop
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !currentActiveUrl) return;
+    if (!video || !playbackUrl) return;
 
     let hlsInstance: Hls | null = null;
+    let mpegtsPlayer: ReturnType<typeof mpegts.createPlayer> | null = null;
     setPlayerError(null);
 
     // native media error handlers
     const handleNativeError = () => {
       console.warn("HTML5 native video tag reported playback load error");
+      const message = video.error?.message || '';
+      const lowerMessage = message.toLowerCase();
+      const isAudioDecoderError = lowerMessage.includes('audio decoder') || lowerMessage.includes('unsupportedconfig');
+
+      if (isAudioDecoderError && playbackMode !== 'transcoded') {
+        setPlayerError("Audio codec unsupported in this browser. Transcoding to a compatible stream...");
+        setPlaybackMode('transcoded');
+        return;
+      }
+
+      if (isAudioDecoderError && !disableStreamAudio) {
+        setPlayerError("Transcoded audio still failed. Retrying video-only playback...");
+        setDisableStreamAudio(true);
+        setPlaybackMode('transcoded');
+        return;
+      }
+
       setPlayerError("Media stream format issue or browser sandbox blocking stream.");
     };
 
@@ -211,12 +311,35 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       }
     };
 
+    const handleCanPlay = () => {
+      if (isVaultSubActive && vaultMatch) {
+        video.currentTime = Math.floor(vaultMatch.offsetSeconds % 600);
+      }
+      setPlayerError(null);
+      video.play().catch(() => {});
+    };
+
     video.addEventListener('error', handleNativeError);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('canplay', handleCanPlay);
 
-    if (Hls.isSupported()) {
+    const shouldUseMpegTs = playbackMode !== 'transcoded' && (
+      playbackMode === 'mpegts' ||
+      (playbackMode === 'auto' && !isHlsManifestUrl(rawActiveUrl) && !isNativeMediaUrl(rawActiveUrl)) ||
+      isMpegTsUrl(rawActiveUrl)
+    );
+    const shouldUseHls = (playbackMode === 'hls' || (playbackMode === 'auto' && isHlsManifestUrl(rawActiveUrl))) &&
+      Hls.isSupported() &&
+      !isNativeMediaUrl(rawActiveUrl) &&
+      !shouldUseMpegTs;
+
+    if (shouldUseHls) {
       if (hlsRef.current) {
         hlsRef.current.destroy();
+      }
+      if (mpegtsRef.current) {
+        safelyDestroyMpegtsPlayer(mpegtsRef.current);
+        mpegtsRef.current = null;
       }
 
       hlsInstance = new Hls({
@@ -226,7 +349,7 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
         maxBufferLength: 10,
       });
 
-      hlsInstance.loadSource(currentActiveUrl);
+      hlsInstance.loadSource(playbackUrl);
       hlsInstance.attachMedia(video);
       hlsRef.current = hlsInstance;
 
@@ -244,6 +367,20 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       hlsInstance.on(Hls.Events.ERROR, (event, data) => {
         if (data.fatal) {
           console.warn("Fatal HLS playback block:", data.type, "Details:", data.details);
+
+          const shouldTryMpegTsFallback = [
+            'manifestLoadTimeOut',
+            'manifestLoadError',
+            'manifestParsingError',
+            'manifestIncompatibleCodecsError'
+          ].includes(data.details);
+
+          if (shouldTryMpegTsFallback && playbackMode !== 'mpegts') {
+            setPlayerError("HLS manifest failed. Trying MPEG-TS playback...");
+            setPlaybackMode('mpegts');
+            return;
+          }
+
           setPlayerError(`Network CORS limit / Stream offline: ${data.details}`);
           
           if (hlsInstance) {
@@ -260,26 +397,112 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
           }
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = currentActiveUrl;
-      video.addEventListener('canplay', () => {
-        if (isVaultSubActive && vaultMatch) {
-          video.currentTime = Math.floor(vaultMatch.offsetSeconds % 600);
-        }
-        video.play().catch(() => {});
-      });
+    } else if (shouldUseMpegTs) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (mpegtsRef.current) {
+        safelyDestroyMpegtsPlayer(mpegtsRef.current);
+        mpegtsRef.current = null;
+      }
+
+      if (!mpegts.isSupported()) {
+        setPlayerError("This browser cannot transmux MPEG-TS streams with Media Source Extensions.");
+      } else {
+        mpegtsPlayer = mpegts.createPlayer(
+          {
+            type: 'mpegts',
+            isLive: true,
+            hasAudio: !disableStreamAudio,
+            hasVideo: true,
+            url: playbackUrl,
+          },
+          {
+            enableWorker: true,
+            enableStashBuffer: true,
+            stashInitialSize: 1024 * 1024,
+            liveBufferLatencyChasing: true,
+            liveBufferLatencyChasingOnPaused: true,
+            liveBufferLatencyMaxLatency: 6,
+            liveBufferLatencyMinRemain: 2,
+            lazyLoad: false,
+            autoCleanupSourceBuffer: true,
+            autoCleanupMaxBackwardDuration: 90,
+            autoCleanupMinBackwardDuration: 30,
+          }
+        );
+
+        mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, () => {
+          setPlayerError(null);
+          video.play().catch((playErr) => {
+            console.log("MPEG-TS autoplay paused by browser policy:", playErr.message);
+          });
+        });
+
+        mpegtsPlayer.on(mpegts.Events.ERROR, (errorType, errorDetail) => {
+          console.warn("MPEG-TS playback block:", errorType, errorDetail);
+          if (errorType === mpegts.ErrorTypes.MEDIA_ERROR && playbackMode !== 'transcoded') {
+            setPlayerError("MPEG-TS codec rejected. Transcoding to browser-compatible audio...");
+            setPlaybackMode('transcoded');
+            return;
+          }
+
+          if (errorType === mpegts.ErrorTypes.MEDIA_ERROR && !disableStreamAudio) {
+            setPlayerError("MPEG-TS audio codec rejected. Retrying video-only playback...");
+            setDisableStreamAudio(true);
+            setPlaybackMode(playbackMode === 'transcoded' ? 'transcoded' : 'mpegts');
+            return;
+          }
+
+          if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
+            if (playbackMode === 'auto') {
+              setPlayerError("MPEG-TS parser rejected the stream. Trying HLS playback...");
+              setPlaybackMode('hls');
+            } else {
+              setPlayerError("MPEG-TS parser rejected the stream. Trying native playback...");
+              setPlaybackMode('native');
+            }
+            return;
+          }
+          setPlayerError(`MPEG-TS stream blocked or unsupported: ${errorDetail || errorType}`);
+        });
+
+        mpegtsPlayer.attachMediaElement(video);
+        mpegtsPlayer.load();
+        mpegtsPlayer.play();
+        mpegtsRef.current = mpegtsPlayer;
+      }
     } else {
-       setPlayerError("This device lacks HLS/H.264 video decoding capabilities.");
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (mpegtsRef.current) {
+        safelyDestroyMpegtsPlayer(mpegtsRef.current);
+        mpegtsRef.current = null;
+      }
+      video.src = playbackUrl;
+      video.load();
+      video.play().catch(() => {});
     }
 
     return () => {
       video.removeEventListener('error', handleNativeError);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleCanPlay);
       if (hlsInstance) {
         hlsInstance.destroy();
       }
+      if (mpegtsPlayer) {
+        safelyDestroyMpegtsPlayer(mpegtsPlayer);
+        if (mpegtsRef.current === mpegtsPlayer) {
+          mpegtsRef.current = null;
+        }
+      }
+      resetVideoElement(video);
     };
-  }, [currentActiveUrl, isVaultSubActive]);
+  }, [playbackUrl, isVaultSubActive, playbackMode, rawActiveUrl, vaultMatch, disableStreamAudio]);
 
   // Ambient Lighting color glow sampler
   useEffect(() => {
@@ -322,6 +545,7 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
     setPlayerError(null);
     setIsUsingFallback(true);
     setUserBypassedVault(true); // Disable vault matching when they force standard fallback
+    setPlaybackMode('auto');
   };
 
   const handleBypassSub = () => {
@@ -331,6 +555,14 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
   const handleReEngageSub = () => {
     setUserBypassedVault(false);
   };
+
+  const decoderLabel = playbackMode === 'transcoded'
+    ? 'MP4.Transcode'
+    : mpegtsRef.current
+      ? 'MPEGTS.Active'
+      : hlsRef.current
+        ? 'HLS.Active'
+        : 'HTML5.Native';
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
@@ -471,7 +703,7 @@ export const Player: React.FC<PlayerProps> = ({ url }) => {
       <div className="absolute bottom-4 right-4 z-20 flex gap-2 pointer-events-none">
         <div className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/5 text-[9px] font-mono tracking-widest text-white/40 uppercase flex items-center gap-1.5 font-mono">
           <Sparkles className="w-3 h-3 text-afterglow-primary" />
-          <span>GLOW_DECODER {hlsRef.current ? 'HLS.Active' : 'HTML5.Native'}</span>
+          <span>GLOW_DECODER {decoderLabel}</span>
         </div>
       </div>
     </div>
